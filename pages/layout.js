@@ -1,10 +1,10 @@
 import '../styles/globals.css';
-import NavBar from '../components/NavBar';
+import Navbar from '../components/Navbar';
 
 export default function Layout({ children }) {
   return (
     <>
-      <NavBar />
+      <Navbar />
       <main>{children}</main>
     </>
   );
