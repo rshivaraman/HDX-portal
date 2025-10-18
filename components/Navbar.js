@@ -1,89 +1,171 @@
 'use client';
 import Link from 'next/link';
+import Image from 'next/image';
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabaseClient';
 
 export default function Navbar() {
   const [session, setSession] = useState(null);
   const [role, setRole] = useState(null);
-
-  // Fetch session and role
-  const loadSession = async () => {
-    const { data: { session } } = await supabase.auth.getSession();
-    setSession(session);
-
-    if (session?.user?.email) {
-      const { data, error } = await supabase
-        .from('players')
-        .select('role')
-        .eq('email', session.user.email)
-        .single();
-
-      if (!error && data) {
-        setRole(data.role); // make sure it matches exactly 'admin' in Supabase
-      }
-    }
-  };
+  const [fullName, setFullName] = useState('');
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [eventsDropdownOpen, setEventsDropdownOpen] = useState(false);
 
   useEffect(() => {
-    loadSession();
-
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+    const getSession = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
       setSession(session);
+
       if (session?.user?.email) {
-        supabase
+        const { data, error } = await supabase
           .from('players')
-          .select('role')
+          .select('role, full_name')
           .eq('email', session.user.email)
-          .single()
-          .then(({ data, error }) => {
-            if (!error && data) setRole(data.role);
-          });
-      } else {
+          .single();
+
+        if (!error && data) {
+          setRole(data.role);
+          setFullName(data.full_name);
+        }
+      }
+    };
+
+    getSession();
+
+    const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+      if (!session) {
         setRole(null);
+        setFullName('');
       }
     });
 
-    return () => {
-      listener.subscription.unsubscribe();
-    };
+    return () => authListener.subscription.unsubscribe();
   }, []);
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
-    setSession(null);
-    setRole(null);
     window.location.href = '/';
   };
 
   return (
-    <nav className="bg-gray-900 text-white py-3 shadow-md">
-      <div className="max-w-6xl mx-auto flex justify-between items-center px-4">
-        <h1 className="text-xl font-bold text-blue-400">HDX Alliance Portal</h1>
+    <nav className="fixed top-0 left-0 w-full bg-gray-900 text-white shadow-lg z-50">
+      <div className="max-w-7xl mx-auto flex justify-between items-center px-6 py-3">
+        {/* Logo + Title */}
+        <Link href="/" className="flex items-center gap-3 hover:opacity-90 transition-all duration-300">
+          <Image
+            src="/logo.png"
+            alt="HDX Logo"
+            width={40}
+            height={40}
+            className="rounded-lg border border-blue-500 shadow-sm object-cover"
+          />
+          <span className="font-bold tracking-wide text-blue-400 text-2xl">
+            HDX Alliance Portal
+          </span>
+        </Link>
 
-        <div className="space-x-6">
+        {/* Desktop Menu */}
+        <div className="hidden md:flex items-center space-x-8">
           {!session ? (
             <>
-              <Link href="/login" className="hover:text-blue-400">Login</Link>
-              <Link href="/signup" className="hover:text-blue-400">Sign Up</Link>
+              <Link href="/login" className="hover:text-blue-400 transition-colors">Login</Link>
+              <Link href="/signup" className="hover:text-blue-400 transition-colors">Sign Up</Link>
             </>
           ) : (
             <>
-              <Link href="/profile" className="hover:text-blue-400">Profile</Link>
+              <span className="text-sm text-gray-300">
+                Logged in as: <span className="font-semibold text-blue-300">{fullName}</span>
+              </span>
+              <Link href="/profile" className="hover:text-blue-400 transition-colors">Profile</Link>
+              <Link href="/dashboard" className="hover:text-blue-400 transition-colors">Dashboard</Link>
+
+              {/* Events Dropdown */}
+              <div className="relative">
+                <button
+                  onClick={() => setEventsDropdownOpen(!eventsDropdownOpen)}
+                  className="hover:text-blue-400 transition-colors flex items-center gap-1 focus:outline-none"
+                >
+                  Events
+                  <span className={`transform transition-transform duration-200 ${eventsDropdownOpen ? 'rotate-180' : 'rotate-0'}`}>▾</span>
+                </button>
+
+                {eventsDropdownOpen && (
+                  <div className="absolute mt-2 right-0 w-48 bg-gray-800 border border-gray-700 rounded-lg shadow-lg z-50">
+                    <Link href="/events" className="block px-4 py-2 hover:bg-gray-700 rounded-t-md">Event Performance</Link>
+                    <Link href="/eventplayers" className="block px-4 py-2 hover:bg-gray-700">Event Players Selection</Link>
+                    <Link href="/eventmgmt" className="block px-4 py-2 hover:bg-gray-700 rounded-b-md">Event Management</Link>
+                  </div>
+                )}
+              </div>
+
+              <Link href="/playerdata" className="hover:text-blue-400 transition-colors">Player Data</Link>
+              <Link href="/hof" className="hover:text-blue-400 transition-colors">Hall of Fame</Link>
+
               {role === 'admin' && (
-                <Link href="/dashboard" className="hover:text-blue-400">Dashboard</Link>
+                <span className="text-yellow-400 font-semibold text-sm">(Admin)</span>
               )}
-              <Link href="/hof" className="hover:text-blue-400">Hall of Fame</Link>
+
               <button
                 onClick={handleLogout}
-                className="bg-blue-600 px-3 py-1 rounded hover:bg-blue-700"
+                className="bg-blue-600 px-4 py-1.5 rounded-lg hover:bg-blue-700 transition-all shadow-md"
               >
                 Logout
               </button>
             </>
           )}
         </div>
+
+        {/* Mobile Toggle */}
+        <button
+          onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+          className="md:hidden focus:outline-none"
+        >
+          {mobileMenuOpen ? (
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          ) : (
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
+            </svg>
+          )}
+        </button>
       </div>
+
+      {/* Mobile Menu */}
+      {mobileMenuOpen && (
+        <div className="md:hidden bg-gray-800 border-t border-gray-700 px-6 py-3 space-y-3">
+          {!session ? (
+            <>
+              <Link href="/login" className="block hover:text-blue-400 transition">Login</Link>
+              <Link href="/signup" className="block hover:text-blue-400 transition">Sign Up</Link>
+            </>
+          ) : (
+            <>
+              <span className="block text-gray-300 mb-2">
+                Logged in as: <span className="font-semibold text-blue-300">{fullName}</span>
+              </span>
+              <Link href="/profile" className="block hover:text-blue-400 transition">Profile</Link>
+              <Link href="/dashboard" className="block hover:text-blue-400 transition">Dashboard</Link>
+              <Link href="/events" className="block hover:text-blue-400 transition">Event Performance</Link>
+              <Link href="/eventplayers" className="block hover:text-blue-400 transition">Event Players Selection</Link>
+              <Link href="/eventmgmt" className="block hover:text-blue-400 transition">Event Management</Link>
+              <Link href="/playerdata" className="block hover:text-blue-400 transition">Player Data</Link>
+              <Link href="/hof" className="block hover:text-blue-400 transition">Hall of Fame</Link>
+              {role === 'admin' && (
+                <span className="block text-yellow-400 font-semibold">(Admin)</span>
+              )}
+              <button
+                onClick={handleLogout}
+                className="w-full bg-blue-600 px-3 py-2 rounded-lg hover:bg-blue-700 mt-2 shadow-md"
+              >
+                Logout
+              </button>
+            </>
+          )}
+        </div>
+      )}
     </nav>
   );
 }
