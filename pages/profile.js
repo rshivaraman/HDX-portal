@@ -64,21 +64,27 @@ export default function Profile() {
     setProfile({ ...profile, [name]: type === 'checkbox' ? checked : value });
   };
 
-  const handleSave = async () => {
+  const saveProfile = async (updatedFields = {}) => {
     const { data: { session } } = await supabase.auth.getSession();
     const email = session?.user?.email;
     if (!email) return;
 
     const { error } = await supabase
       .from('players')
-      .upsert({ ...profile, email });
-    
+      .upsert(
+        { ...profile, ...updatedFields, email },
+        { onConflict: ['email'] }
+      );
+
     if (error) {
       alert('Error saving profile: ' + error.message);
     } else {
       alert('Profile updated successfully!');
+      setProfile(prev => ({ ...prev, ...updatedFields }));
     }
   };
+
+  const handleSave = () => saveProfile();
 
   const handlePasswordChange = (e) => {
     const { name, value } = e.target;
@@ -127,13 +133,7 @@ export default function Profile() {
       .getPublicUrl(filePath);
 
     setAvatarUrl(data.publicUrl);
-
-    const { error } = await supabase
-      .from('players')
-      .update({ profile_image_url: data.publicUrl })
-      .eq('email', profile.email);
-
-    if (error) alert('Error saving avatar URL: ' + error.message);
+    await saveProfile({ profile_image_url: data.publicUrl });
 
     setUploading(false);
   };
@@ -191,4 +191,4 @@ export default function Profile() {
       </div>
     </div>
   );
-}
+          }
