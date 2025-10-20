@@ -274,4 +274,4 @@ function HOFSection({ hofMembers }) {
       )}
     </div>
   );
-                  }
+                }
