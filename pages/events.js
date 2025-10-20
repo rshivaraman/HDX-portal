@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabaseClient';
 
-export default function Events({ role }) { // role: 'admin' or 'member'
+export default function Events() {
   const [form, setForm] = useState({
     player_id: '',
     event_threshold_id: '',
@@ -32,6 +32,7 @@ export default function Events({ role }) { // role: 'admin' or 'member'
         .order('full_name', { ascending: true });
       setPlayers(playerData || []);
 
+      // ✅ FIX: Correct table name
       const { data: thresholdData } = await supabase
         .from('event_thresholds')
         .select('id, event_name, min_participation')
@@ -44,6 +45,7 @@ export default function Events({ role }) { // role: 'admin' or 'member'
   }, []);
 
   const fetchEvents = async () => {
+    // ✅ FIX: Correct table join reference
     const { data } = await supabase
       .from('event_performance')
       .select(`
@@ -72,11 +74,11 @@ export default function Events({ role }) { // role: 'admin' or 'member'
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (role !== 'admin') return; // Extra safety
-
     setSubmitting(true);
-    if (!form.event_threshold_id || !form.player_id) {
-      alert('⚠️ Please select a valid player and event threshold.');
+
+    // ✅ Optional: Ensure event_threshold_id is valid
+    if (!form.event_threshold_id) {
+      alert('⚠️ Please select a valid Event Threshold before submitting.');
       setSubmitting(false);
       return;
     }
@@ -99,13 +101,17 @@ export default function Events({ role }) { // role: 'admin' or 'member'
     setSubmitting(false);
   };
 
-  const handleDelete = async (id) => {
-    if (role !== 'admin') return;
-    if (!confirm('Are you sure?')) return;
-    const { error } = await supabase.from('event_performance').delete().eq('id', id);
-    if (error) return alert('Error deleting: ' + error.message);
-    fetchEvents();
-  };
+  useEffect(() => {
+    const filtered = events.filter(ev =>
+      ev.players?.full_name.toLowerCase().includes(search.toLowerCase()) ||
+      ev.event_thresholds?.event_name.toLowerCase().includes(search.toLowerCase())
+    );
+    setFilteredEvents(filtered);
+    setPage(1);
+  }, [search, events]);
+
+  const totalPages = Math.ceil(filteredEvents.length / rowsPerPage);
+  const paginatedEvents = filteredEvents.slice((page - 1) * rowsPerPage, page * rowsPerPage);
 
   const handleSort = (field) => {
     const order = sortField === field && sortOrder === 'asc' ? 'desc' : 'asc';
@@ -119,18 +125,6 @@ export default function Events({ role }) { // role: 'admin' or 'member'
     setFilteredEvents(sorted);
   };
 
-  useEffect(() => {
-    const filtered = events.filter(ev =>
-      ev.players?.full_name.toLowerCase().includes(search.toLowerCase()) ||
-      ev.event_thresholds?.event_name.toLowerCase().includes(search.toLowerCase())
-    );
-    setFilteredEvents(filtered);
-    setPage(1);
-  }, [search, events]);
-
-  const totalPages = Math.ceil(filteredEvents.length / rowsPerPage);
-  const paginatedEvents = filteredEvents.slice((page - 1) * rowsPerPage, page * rowsPerPage);
-
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-black to-gray-800 text-white py-10 px-4">
       <div className="max-w-7xl mx-auto backdrop-blur-md bg-white/10 p-6 rounded-2xl shadow-2xl border border-white/20">
@@ -138,64 +132,101 @@ export default function Events({ role }) { // role: 'admin' or 'member'
           ⚔️ Event Performance Dashboard
         </h2>
 
-        {/* Admin Only Form */}
-        {role === 'admin' && (
-          <form onSubmit={handleSubmit} className="bg-black/40 border border-gray-700 p-6 rounded-xl mb-8 shadow-inner grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div>
-              <label className="block mb-1 font-semibold text-blue-400">Player</label>
-              <select name="player_id" value={form.player_id} onChange={handleChange} className="w-full bg-gray-800 border border-gray-600 rounded-lg p-3 focus:ring-2 focus:ring-blue-500">
-                <option value="">Select Player</option>
-                {players.map(p => <option key={p.id} value={p.id}>{p.full_name}</option>)}
-              </select>
-            </div>
-
-            <div>
-              <label className="block mb-1 font-semibold text-blue-400">Event Threshold</label>
-              <select name="event_threshold_id" value={form.event_threshold_id} onChange={handleChange} className="w-full bg-gray-800 border border-gray-600 rounded-lg p-3 focus:ring-2 focus:ring-blue-500">
-                <option value="">Select Threshold</option>
-                {thresholds.map(t => <option key={t.id} value={t.id}>{t.event_name} (min {t.min_participation})</option>)}
-              </select>
-            </div>
-
-            <div>
-              <label className="block mb-1 font-semibold text-blue-400">Event Date</label>
-              <input type="date" name="event_date" value={form.event_date} onChange={handleChange} className="w-full bg-gray-800 border border-gray-600 rounded-lg p-3 focus:ring-2 focus:ring-blue-500" />
-            </div>
-
-            <div>
-              <label className="block mb-1 font-semibold text-blue-400">Participation Count</label>
-              <input type="number" name="participation_count" value={form.participation_count} onChange={handleChange} className="w-full bg-gray-800 border border-gray-600 rounded-lg p-3 focus:ring-2 focus:ring-blue-500" />
-            </div>
-
-            <div>
-              <label className="block mb-1 font-semibold text-blue-400">Score</label>
-              <input type="number" name="score" value={form.score} onChange={handleChange} className="w-full bg-gray-800 border border-gray-600 rounded-lg p-3 focus:ring-2 focus:ring-blue-500" />
-            </div>
-
-            <div>
-              <label className="block mb-1 font-semibold text-blue-400">Rank</label>
-              <input type="text" name="rank" value={form.rank} onChange={handleChange} placeholder="Rank Achieved" className="w-full bg-gray-800 border border-gray-600 rounded-lg p-3 focus:ring-2 focus:ring-blue-500" />
-            </div>
-
-            <div className="md:col-span-2">
-              <label className="block mb-1 font-semibold text-blue-400">Comments</label>
-              <textarea name="comments" value={form.comments} onChange={handleChange} placeholder="Add notes or remarks..." rows="3" className="w-full bg-gray-800 border border-gray-600 rounded-lg p-3 focus:ring-2 focus:ring-blue-500" />
-            </div>
-
-            <div className="md:col-span-2 flex justify-center">
-              <button type="submit" disabled={submitting} className="bg-blue-600 hover:bg-blue-700 px-8 py-3 rounded-lg font-semibold shadow-md transition-all">
-                {submitting ? 'Submitting...' : 'Submit Event'}
-              </button>
-            </div>
-          </form>
-        )}
-
-        {/* Member Notice */}
-        {role === 'member' && (
-          <div className="bg-gray-800/70 border border-yellow-600 p-3 rounded-lg text-yellow-400 text-center mb-4">
-            🔒 You have view-only access.
+        {/* Add/Edit Form */}
+        <form onSubmit={handleSubmit} className="bg-black/40 border border-gray-700 p-6 rounded-xl mb-8 shadow-inner grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div>
+            <label className="block mb-1 font-semibold text-blue-400">Player</label>
+            <select
+              name="player_id"
+              value={form.player_id}
+              onChange={handleChange}
+              className="w-full bg-gray-800 border border-gray-600 rounded-lg p-3 focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="">Select Player</option>
+              {players.map(p => <option key={p.id} value={p.id}>{p.full_name}</option>)}
+            </select>
           </div>
-        )}
+
+          <div>
+            <label className="block mb-1 font-semibold text-blue-400">Event Threshold</label>
+            <select
+              name="event_threshold_id"
+              value={form.event_threshold_id}
+              onChange={handleChange}
+              className="w-full bg-gray-800 border border-gray-600 rounded-lg p-3 focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="">Select Threshold</option>
+              {thresholds.map(t => <option key={t.id} value={t.id}>{t.event_name} (min {t.min_participation})</option>)}
+            </select>
+          </div>
+
+          <div>
+            <label className="block mb-1 font-semibold text-blue-400">Event Date</label>
+            <input
+              type="date"
+              name="event_date"
+              value={form.event_date}
+              onChange={handleChange}
+              className="w-full bg-gray-800 border border-gray-600 rounded-lg p-3 focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+
+          <div>
+            <label className="block mb-1 font-semibold text-blue-400">Participation Count</label>
+            <input
+              type="number"
+              name="participation_count"
+              value={form.participation_count}
+              onChange={handleChange}
+              className="w-full bg-gray-800 border border-gray-600 rounded-lg p-3 focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+
+          <div>
+            <label className="block mb-1 font-semibold text-blue-400">Score</label>
+            <input
+              type="number"
+              name="score"
+              value={form.score}
+              onChange={handleChange}
+              className="w-full bg-gray-800 border border-gray-600 rounded-lg p-3 focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+
+          <div>
+            <label className="block mb-1 font-semibold text-blue-400">Rank</label>
+            <input
+              type="text"
+              name="rank"
+              value={form.rank}
+              onChange={handleChange}
+              placeholder="Rank Achieved"
+              className="w-full bg-gray-800 border border-gray-600 rounded-lg p-3 focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+
+          <div className="md:col-span-2">
+            <label className="block mb-1 font-semibold text-blue-400">Comments</label>
+            <textarea
+              name="comments"
+              value={form.comments}
+              onChange={handleChange}
+              placeholder="Add notes or remarks..."
+              rows="3"
+              className="w-full bg-gray-800 border border-gray-600 rounded-lg p-3 focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+
+          <div className="md:col-span-2 flex justify-center">
+            <button
+              type="submit"
+              disabled={submitting}
+              className="bg-blue-600 hover:bg-blue-700 px-8 py-3 rounded-lg font-semibold shadow-md transition-all"
+            >
+              {submitting ? 'Submitting...' : 'Submit Event'}
+            </button>
+          </div>
+        </form>
 
         {/* Search */}
         <div className="flex justify-between items-center mb-4">
@@ -220,7 +251,6 @@ export default function Events({ role }) { // role: 'admin' or 'member'
                 <th className="px-4 py-2 cursor-pointer" onClick={() => handleSort('score')}>Score</th>
                 <th className="px-4 py-2 cursor-pointer" onClick={() => handleSort('rank')}>Rank</th>
                 <th className="px-4 py-2">Comments</th>
-                {role === 'admin' && <th className="px-4 py-2">Actions</th>}
               </tr>
             </thead>
             <tbody>
@@ -233,11 +263,6 @@ export default function Events({ role }) { // role: 'admin' or 'member'
                   <td className="px-4 py-2">{ev.score}</td>
                   <td className="px-4 py-2">{ev.rank}</td>
                   <td className="px-4 py-2">{ev.comments}</td>
-                  {role === 'admin' && (
-                    <td className="px-4 py-2 flex gap-2">
-                      <button onClick={() => handleDelete(ev.id)} className="bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded transition">Delete</button>
-                    </td>
-                  )}
                 </tr>
               ))}
             </tbody>
@@ -246,13 +271,39 @@ export default function Events({ role }) { // role: 'admin' or 'member'
 
         {/* Pagination */}
         <div className="flex justify-center gap-3 mt-6">
-          <button disabled={page <= 1} onClick={() => setPage(1)} className="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded disabled:opacity-40">{'<<'}</button>
-          <button disabled={page <= 1} onClick={() => setPage(prev => prev - 1)} className="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded disabled:opacity-40">{'<'}</button>
-          <span className="px-3 py-2 bg-gray-800 rounded border border-gray-600">Page {page} / {totalPages || 1}</span>
-          <button disabled={page >= totalPages} onClick={() => setPage(prev => prev + 1)} className="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded disabled:opacity-40">{'>'}</button>
-          <button disabled={page >= totalPages} onClick={() => setPage(totalPages)} className="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded disabled:opacity-40">{'>>'}</button>
+          <button
+            disabled={page <= 1}
+            onClick={() => setPage(prev => 1)}
+            className="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded disabled:opacity-40"
+          >
+            {'<<'}
+          </button>
+          <button
+            disabled={page <= 1}
+            onClick={() => setPage(prev => prev - 1)}
+            className="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded disabled:opacity-40"
+          >
+            {'<'}
+          </button>
+          <span className="px-3 py-2 bg-gray-800 rounded border border-gray-600">
+            Page {page} / {totalPages || 1}
+          </span>
+          <button
+            disabled={page >= totalPages}
+            onClick={() => setPage(prev => prev + 1)}
+            className="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded disabled:opacity-40"
+          >
+            {'>'}
+          </button>
+          <button
+            disabled={page >= totalPages}
+            onClick={() => setPage(prev => totalPages)}
+            className="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded disabled:opacity-40"
+          >
+            {'>>'}
+          </button>
         </div>
       </div>
     </div>
   );
-          }
+                }
