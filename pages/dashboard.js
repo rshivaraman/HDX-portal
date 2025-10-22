@@ -9,13 +9,15 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
 
   const [search, setSearch] = useState('');
-  const [editingPlayer, setEditingPlayer] = useState(null);
-  const [form, setForm] = useState({});
   const [filters, setFilters] = useState({ troop: 'all', farm: 'all', rank: 'all' });
   const [sortField, setSortField] = useState('');
   const [sortOrder, setSortOrder] = useState('asc');
   const [page, setPage] = useState(1);
   const perPage = 10;
+
+  const [editingPlayer, setEditingPlayer] = useState(null);
+  const [form, setForm] = useState({});
+  const [showModal, setShowModal] = useState(false);
 
   const troopOptions = ['Infantry', 'Rider', 'Ranged', 'Garrison', 'Mixed'];
 
@@ -29,7 +31,7 @@ export default function Dashboard() {
     setRole(data.role);
   };
 
-  // ✅ Fetch players and ranks
+  // ✅ Fetch players & ranks
   const fetchPlayers = async () => {
     const { data, error } = await supabase.from('players').select('*').order('created_at', { ascending: false });
     if (!error) setPlayers(data || []);
@@ -49,10 +51,12 @@ export default function Dashboard() {
     })();
   }, []);
 
-  // ✅ Filters + sorting
+  // ✅ Filtering + sorting
   const filteredPlayers = players
     .filter(p =>
-      (search === '' || p.full_name?.toLowerCase().includes(search.toLowerCase()) || p.email?.toLowerCase().includes(search.toLowerCase())) &&
+      (search === '' ||
+        p.full_name?.toLowerCase().includes(search.toLowerCase()) ||
+        p.email?.toLowerCase().includes(search.toLowerCase())) &&
       (filters.troop === 'all' || p.troop_type === filters.troop) &&
       (filters.farm === 'all' || (filters.farm === 'yes' ? p.farm_account : !p.farm_account)) &&
       (filters.rank === 'all' || p.rank_id === filters.rank)
@@ -61,45 +65,39 @@ export default function Dashboard() {
       if (!sortField) return 0;
       const valA = a[sortField] || '';
       const valB = b[sortField] || '';
-      if (typeof valA === 'string') return sortOrder === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
+      if (typeof valA === 'string')
+        return sortOrder === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
       return sortOrder === 'asc' ? valA - valB : valB - valA;
     });
 
   const totalPages = Math.ceil(filteredPlayers.length / perPage);
   const displayed = filteredPlayers.slice((page - 1) * perPage, page * perPage);
 
+  // ✅ Edit modal handlers
+  const handleEdit = (player) => {
+    if (role !== 'admin') return;
+    setEditingPlayer(player.id);
+    setForm(player);
+    setShowModal(true);
+  };
+
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
     setForm({ ...form, [name]: type === 'checkbox' ? checked : value });
   };
 
-  const handleEdit = (player) => {
-    if (role !== 'admin') return;
-    setEditingPlayer(player.id);
-    setForm(player);
-  };
-
-  const handleCancel = () => {
-    setEditingPlayer(null);
-    setForm({});
-  };
-
   const handleSave = async () => {
-    if (role !== 'admin') return alert('You are not authorized to perform this action.');
-    if (editingPlayer) {
-      const { error } = await supabase.from('players').upsert(form);
-      if (error) return alert('Error updating player: ' + error.message);
-    } else {
-      const { error } = await supabase.from('players').insert([form]);
-      if (error) return alert('Error adding player: ' + error.message);
-    }
+    if (role !== 'admin') return alert('You are not authorized.');
+    const { error } = await supabase.from('players').upsert(form);
+    if (error) return alert('Error updating player: ' + error.message);
+    setShowModal(false);
     setEditingPlayer(null);
     setForm({});
     fetchPlayers();
   };
 
   const handleDelete = async (id) => {
-    if (role !== 'admin') return alert('You are not authorized to delete.');
+    if (role !== 'admin') return alert('You are not authorized.');
     if (!confirm('Are you sure you want to delete this player?')) return;
     const { error } = await supabase.from('players').delete().eq('id', id);
     if (error) return alert('Error deleting player: ' + error.message);
@@ -128,42 +126,9 @@ export default function Dashboard() {
           Alliance Dashboard
         </h2>
 
-        {/* Role notice */}
         {role === 'member' && (
           <div className="bg-gray-800/70 border border-yellow-600 p-3 rounded-lg text-yellow-400 text-center">
             🔒 You have view-only access.
-          </div>
-        )}
-
-        {/* Add/Edit Form (Admins Only) */}
-        {role === 'admin' && (
-          <div className="mb-6 p-6 border border-gray-700 rounded-2xl bg-black/30 shadow-inner space-y-4">
-            <h3 className="font-semibold text-lg">{editingPlayer ? 'Edit Player' : 'Add New Player'}</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <input name="full_name" placeholder="Full Name" value={form.full_name || ''} onChange={handleChange} className="p-3 rounded-lg bg-gray-800/70 border border-gray-600 text-white"/>
-              <input name="email" placeholder="Email" value={form.email || ''} onChange={handleChange} className="p-3 rounded-lg bg-gray-800/70 border border-gray-600 text-white"/>
-              <input name="country" placeholder="Country" value={form.country || ''} onChange={handleChange} className="p-3 rounded-lg bg-gray-800/70 border border-gray-600 text-white"/>
-              <input name="discord_id" placeholder="Discord ID" value={form.discord_id || ''} onChange={handleChange} className="p-3 rounded-lg bg-gray-800/70 border border-gray-600 text-white"/>
-              <input name="igg_id" placeholder="IGG ID" value={form.igg_id || ''} onChange={handleChange} className="p-3 rounded-lg bg-gray-800/70 border border-gray-600 text-white"/>
-              <input name="hero_name" placeholder="Hero Name" value={form.hero_name || ''} onChange={handleChange} className="p-3 rounded-lg bg-gray-800/70 border border-gray-600 text-white"/>
-              <input name="might" type="number" placeholder="Might" value={form.might || ''} onChange={handleChange} className="p-3 rounded-lg bg-gray-800/70 border border-gray-600 text-white"/>
-              <select name="troop_type" value={form.troop_type || ''} onChange={handleChange} className="p-3 rounded-lg bg-gray-800/70 border border-gray-600 text-white">
-                <option value="">Select Troop Type</option>
-                {troopOptions.map(t => <option key={t} value={t}>{t}</option>)}
-              </select>
-              <label className="flex items-center gap-2">
-                <input type="checkbox" name="farm_account" checked={form.farm_account || false} onChange={handleChange} className="accent-blue-500"/>
-                Has Farm Account
-              </label>
-              <select name="rank_id" value={form.rank_id || ''} onChange={handleChange} className="p-3 rounded-lg bg-gray-800/70 border border-gray-600 text-white">
-                <option value="">Auto/Unset</option>
-                {ranks.map(r => <option key={r.id} value={r.id}>{r.name} (min {r.min_might})</option>)}
-              </select>
-            </div>
-            <div className="flex gap-3 mt-3">
-              <button onClick={handleSave} className="bg-blue-600 hover:bg-blue-700 py-2 px-5 rounded-lg font-semibold shadow-md">{editingPlayer ? 'Update' : 'Add'}</button>
-              {editingPlayer && <button onClick={handleCancel} className="bg-gray-500 hover:bg-gray-600 py-2 px-5 rounded-lg font-semibold shadow-md">Cancel</button>}
-            </div>
           </div>
         )}
 
@@ -182,7 +147,13 @@ export default function Dashboard() {
             <option value="all">Rank: All</option>
             {ranks.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
           </select>
-          <input type="text" placeholder="Search by name/email..." value={search} onChange={(e) => setSearch(e.target.value)} className="flex-1 bg-gray-800 border border-gray-600 p-3 rounded-lg"/>
+          <input
+            type="text"
+            placeholder="Search by name/email..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="flex-1 bg-gray-800 border border-gray-600 p-3 rounded-lg"
+          />
         </div>
 
         {/* Players Table */}
@@ -190,7 +161,7 @@ export default function Dashboard() {
           <table className="min-w-full text-sm text-gray-300">
             <thead className="bg-gradient-to-r from-blue-600 to-purple-600 text-white">
               <tr>
-                {['Name','Email','Country','IGG ID','Discord ID','Troop Type','Farm','Might','Rank','Actions'].map(col => (
+                {['Name','Email','Country','IGG ID','Discord','Troop','Farm','Might','Rank','Actions'].map(col => (
                   <th key={col} className="px-4 py-2">{col}</th>
                 ))}
               </tr>
@@ -231,7 +202,7 @@ export default function Dashboard() {
               ))}
               {displayed.length === 0 && (
                 <tr>
-                  <td colSpan="10" className="text-center py-6 text-gray-400 italic">No records found.</td>
+                  <td colSpan="10" className="text-center py-6 text-gray-400 italic">No players found.</td>
                 </tr>
               )}
             </tbody>
@@ -245,6 +216,39 @@ export default function Dashboard() {
           <button disabled={page >= totalPages} onClick={() => setPage(page + 1)} className="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded disabled:opacity-40">Next</button>
         </div>
       </div>
+
+      {/* ✅ Edit Player Modal */}
+      {showModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex justify-center items-center z-50">
+          <div className="bg-gray-900 border border-gray-700 p-6 rounded-2xl shadow-2xl w-full max-w-2xl">
+            <h3 className="text-xl font-bold mb-4 text-center">Edit Player</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <input name="full_name" placeholder="Full Name" value={form.full_name || ''} onChange={handleChange} className="p-3 rounded-lg bg-gray-800 border border-gray-600 text-white" />
+              <input name="email" placeholder="Email" value={form.email || ''} onChange={handleChange} className="p-3 rounded-lg bg-gray-800 border border-gray-600 text-white" />
+              <input name="country" placeholder="Country" value={form.country || ''} onChange={handleChange} className="p-3 rounded-lg bg-gray-800 border border-gray-600 text-white" />
+              <input name="discord_id" placeholder="Discord ID" value={form.discord_id || ''} onChange={handleChange} className="p-3 rounded-lg bg-gray-800 border border-gray-600 text-white" />
+              <input name="igg_id" placeholder="IGG ID" value={form.igg_id || ''} onChange={handleChange} className="p-3 rounded-lg bg-gray-800 border border-gray-600 text-white" />
+              <input name="might" type="number" placeholder="Might" value={form.might || ''} onChange={handleChange} className="p-3 rounded-lg bg-gray-800 border border-gray-600 text-white" />
+              <select name="troop_type" value={form.troop_type || ''} onChange={handleChange} className="p-3 rounded-lg bg-gray-800 border border-gray-600 text-white">
+                <option value="">Select Troop Type</option>
+                {troopOptions.map(t => <option key={t} value={t}>{t}</option>)}
+              </select>
+              <label className="flex items-center gap-2">
+                <input type="checkbox" name="farm_account" checked={form.farm_account || false} onChange={handleChange} className="accent-blue-500" />
+                Has Farm Account
+              </label>
+              <select name="rank_id" value={form.rank_id || ''} onChange={handleChange} className="p-3 rounded-lg bg-gray-800 border border-gray-600 text-white">
+                <option value="">Auto/Unset</option>
+                {ranks.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+              </select>
+            </div>
+            <div className="flex justify-end gap-3 mt-6">
+              <button onClick={() => setShowModal(false)} className="bg-gray-600 hover:bg-gray-700 px-5 py-2 rounded-lg">Cancel</button>
+              <button onClick={handleSave} className="bg-blue-600 hover:bg-blue-700 px-5 py-2 rounded-lg font-semibold">Save Changes</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
-  }
+}
