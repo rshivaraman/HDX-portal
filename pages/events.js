@@ -24,106 +24,183 @@ export default function Events() {
   const [page, setPage] = useState(1);
   const rowsPerPage = 10;
 
+  // Load players and thresholds first
   useEffect(() => {
     const fetchData = async () => {
-      const { data: playerData } = await supabase
-        .from('players')
-        .select('id, full_name')
-        .order('full_name', { ascending: true });
-      setPlayers(playerData || []);
+      try {
+        const [
+          { data: playerData, error: playerError },
+          { data: thresholdData, error: thresholdError }
+        ] = await Promise.all([
+          supabase
+            .from('players')
+            .select('id, full_name, igg_id')
+            .order('full_name', { ascending: true }),
+          supabase
+            .from('event_thresholds')
+            .select('id, event_name, min_participation')
+            .order('event_name', { ascending: true })
+        ]);
 
-      // ✅ FIX: Correct table name
-      const { data: thresholdData } = await supabase
-        .from('event_thresholds')
-        .select('id, event_name, min_participation')
-        .order('min_participation', { ascending: true });
-      setThresholds(thresholdData || []);
+        if (playerError) console.error('Player fetch error:', playerError);
+        if (thresholdError) console.error('Threshold fetch error:', thresholdError);
 
-      fetchEvents();
+        setPlayers(playerData || []);
+        setThresholds(thresholdData || []);
+      } catch (err) {
+        console.error('fetchData error', err);
+      }
+
+      await fetchEvents();
     };
+
     fetchData();
   }, []);
 
+  // Fetch event_performance data with proper joins
   const fetchEvents = async () => {
-    // ✅ FIX: Correct table join reference
-    const { data } = await supabase
-      .from('event_performance')
-      .select(`
-        id,
-        player_id,
-        event_threshold_id,
-        event_date,
-        participation_count,
-        score,
-        rank,
-        comments,
-        players!inner(full_name),
-        event_thresholds!inner(event_name)
-      `)
-      .order(sortField, { ascending: sortOrder === 'asc' });
+    try {
+      const { data, error } = await supabase
+        .from('event_performance')
+        .select(`
+          id,
+          player_id,
+          event_threshold_id,
+          event_date,
+          participation_count,
+          score,
+          rank,
+          comments,
+          created_at,
+          updated_at,
+          players:player_id (full_name, igg_id, might),
+          event_thresholds:event_threshold_id!inner (id, event_name)
+        `)
+        .order(sortField, { ascending: sortOrder === 'asc' });
 
-    setEvents(data || []);
-    setFilteredEvents(data || []);
-    setPage(1);
+      if (error) {
+        console.error('❌ Error fetching event_performance:', error);
+        setEvents([]);
+        setFilteredEvents([]);
+        return;
+      }
+
+      console.log('✅ Joined event_performance data:', data);
+      setEvents(data || []);
+      setFilteredEvents(data || []);
+      setPage(1);
+    } catch (err) {
+      console.error('fetchEvents unexpected error', err);
+      setEvents([]);
+      setFilteredEvents([]);
+    }
   };
 
+  // Handle form input changes
   const handleChange = (e) => {
     const { name, value, type } = e.target;
-    setForm({ ...form, [name]: type === 'number' ? parseInt(value) : value });
+    setForm((prev) => ({
+      ...prev,
+      [name]: type === 'number' ? (value === '' ? '' : Number(value)) : value
+    }));
   };
 
+  // Handle form submission with auto-refresh
   const handleSubmit = async (e) => {
     e.preventDefault();
     setSubmitting(true);
 
-    // ✅ Optional: Ensure event_threshold_id is valid
-    if (!form.event_threshold_id) {
-      alert('⚠️ Please select a valid Event Threshold before submitting.');
+    if (!form.player_id || !form.event_threshold_id) {
+      alert('⚠️ Please select a Player and an Event.');
       setSubmitting(false);
       return;
     }
 
-    const { error } = await supabase.from('event_performance').insert([form]);
-    if (error) alert('❌ ' + error.message);
-    else {
-      alert('✅ Event recorded successfully!');
-      setForm({
-        player_id: '',
-        event_threshold_id: '',
-        event_date: '',
-        participation_count: 0,
-        score: 0,
-        rank: '',
-        comments: ''
-      });
-      fetchEvents();
+    const payload = {
+      player_id: form.player_id,
+      event_threshold_id: form.event_threshold_id,
+      event_date: form.event_date || null,
+      participation_count: Number(form.participation_count) || 0,
+      score: Number(form.score) || 0,
+      rank: form.rank || null,
+      comments: form.comments || null
+    };
+
+    try {
+      const { error } = await supabase.from('event_performance').insert([payload]);
+      if (error) {
+        console.error('Insert error:', error);
+        alert('❌ ' + error.message);
+      } else {
+        alert('✅ Event recorded successfully!');
+        setForm({
+          player_id: '',
+          event_threshold_id: '',
+          event_date: '',
+          participation_count: 0,
+          score: 0,
+          rank: '',
+          comments: ''
+        });
+        // Auto refresh table after insert
+        await fetchEvents();
+      }
+    } catch (err) {
+      console.error('handleSubmit unexpected error', err);
+      alert('❌ Unexpected error occurred.');
+    } finally {
+      setSubmitting(false);
     }
-    setSubmitting(false);
   };
 
+  // Client-side search & filter
   useEffect(() => {
-    const filtered = events.filter(ev =>
-      ev.players?.full_name.toLowerCase().includes(search.toLowerCase()) ||
-      ev.event_thresholds?.event_name.toLowerCase().includes(search.toLowerCase())
-    );
+    const s = (search || '').toLowerCase().trim();
+    const filtered = events.filter((ev) => {
+      const playerName = ev.players?.full_name?.toLowerCase() || '';
+      const eventName = ev.event_thresholds?.event_name?.toLowerCase() || '';
+      if (!s) return true;
+      return (
+        playerName.includes(s) ||
+        eventName.includes(s) ||
+        String(ev.score || '').includes(s) ||
+        String(ev.participation_count || '').includes(s)
+      );
+    });
     setFilteredEvents(filtered);
     setPage(1);
   }, [search, events]);
 
-  const totalPages = Math.ceil(filteredEvents.length / rowsPerPage);
-  const paginatedEvents = filteredEvents.slice((page - 1) * rowsPerPage, page * rowsPerPage);
-
+  // Client-side sort
   const handleSort = (field) => {
-    const order = sortField === field && sortOrder === 'asc' ? 'desc' : 'asc';
+    const nextOrder = sortField === field && sortOrder === 'asc' ? 'desc' : 'asc';
     setSortField(field);
-    setSortOrder(order);
+    setSortOrder(nextOrder);
+
+    const getVal = (row, f) => {
+      if (f.includes('.')) {
+        const [p, k] = f.split('.');
+        return row[p]?.[k];
+      }
+      return row[f];
+    };
+
     const sorted = [...filteredEvents].sort((a, b) => {
-      if (a[field] < b[field]) return order === 'asc' ? -1 : 1;
-      if (a[field] > b[field]) return order === 'asc' ? 1 : -1;
-      return 0;
+      const aV = getVal(a, field) ?? '';
+      const bV = getVal(b, field) ?? '';
+      if (typeof aV === 'string' && typeof bV === 'string')
+        return nextOrder === 'asc' ? aV.localeCompare(bV) : bV.localeCompare(aV);
+      return nextOrder === 'asc' ? aV - bV : bV - aV;
     });
+
     setFilteredEvents(sorted);
   };
+
+  const totalPages = Math.max(1, Math.ceil(filteredEvents.length / rowsPerPage));
+  const paginatedEvents = filteredEvents.slice(
+    (page - 1) * rowsPerPage,
+    page * rowsPerPage
+  );
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-black to-gray-800 text-white py-10 px-4">
@@ -132,8 +209,11 @@ export default function Events() {
           ⚔️ Event Performance Dashboard
         </h2>
 
-        {/* Add/Edit Form */}
-        <form onSubmit={handleSubmit} className="bg-black/40 border border-gray-700 p-6 rounded-xl mb-8 shadow-inner grid grid-cols-1 md:grid-cols-2 gap-6">
+        {/* Form */}
+        <form
+          onSubmit={handleSubmit}
+          className="bg-black/40 border border-gray-700 p-6 rounded-xl mb-8 shadow-inner grid grid-cols-1 md:grid-cols-2 gap-6"
+        >
           <div>
             <label className="block mb-1 font-semibold text-blue-400">Player</label>
             <select
@@ -143,20 +223,28 @@ export default function Events() {
               className="w-full bg-gray-800 border border-gray-600 rounded-lg p-3 focus:ring-2 focus:ring-blue-500"
             >
               <option value="">Select Player</option>
-              {players.map(p => <option key={p.id} value={p.id}>{p.full_name}</option>)}
+              {players.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.full_name}
+                </option>
+              ))}
             </select>
           </div>
 
           <div>
-            <label className="block mb-1 font-semibold text-blue-400">Event Threshold</label>
+            <label className="block mb-1 font-semibold text-blue-400">Select Event</label>
             <select
               name="event_threshold_id"
               value={form.event_threshold_id}
               onChange={handleChange}
               className="w-full bg-gray-800 border border-gray-600 rounded-lg p-3 focus:ring-2 focus:ring-blue-500"
             >
-              <option value="">Select Threshold</option>
-              {thresholds.map(t => <option key={t.id} value={t.id}>{t.event_name} (min {t.min_participation})</option>)}
+              <option value="">Select Event</option>
+              {thresholds.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.event_name} (Min {t.min_participation})
+                </option>
+              ))}
             </select>
           </div>
 
@@ -165,7 +253,7 @@ export default function Events() {
             <input
               type="date"
               name="event_date"
-              value={form.event_date}
+              value={form.event_date || ''}
               onChange={handleChange}
               className="w-full bg-gray-800 border border-gray-600 rounded-lg p-3 focus:ring-2 focus:ring-blue-500"
             />
@@ -178,6 +266,7 @@ export default function Events() {
               name="participation_count"
               value={form.participation_count}
               onChange={handleChange}
+              min={0}
               className="w-full bg-gray-800 border border-gray-600 rounded-lg p-3 focus:ring-2 focus:ring-blue-500"
             />
           </div>
@@ -189,6 +278,7 @@ export default function Events() {
               name="score"
               value={form.score}
               onChange={handleChange}
+              min={0}
               className="w-full bg-gray-800 border border-gray-600 rounded-lg p-3 focus:ring-2 focus:ring-blue-500"
             />
           </div>
@@ -200,8 +290,7 @@ export default function Events() {
               name="rank"
               value={form.rank}
               onChange={handleChange}
-              placeholder="Rank Achieved"
-              className="w-full bg-gray-800 border border-gray-600 rounded-lg p-3 focus:ring-2 focus:ring-blue-500"
+              placeholder="Rank Achieved" className="w-full bg-gray-800 border border-gray-600 rounded-lg p-3 focus:ring-2 focus:ring-blue-500"
             />
           </div>
 
@@ -239,32 +328,47 @@ export default function Events() {
           />
         </div>
 
-        {/* Table */}
+        {/* Event Table */}
         <div className="overflow-x-auto rounded-lg border border-gray-700">
           <table className="min-w-full text-sm text-gray-300">
             <thead className="bg-gradient-to-r from-blue-600 to-purple-600 text-white text-left">
               <tr>
-                <th className="px-4 py-2 cursor-pointer" onClick={() => handleSort('players.full_name')}>Player</th>
-                <th className="px-4 py-2 cursor-pointer" onClick={() => handleSort('event_thresholds.event_name')}>Event</th>
-                <th className="px-4 py-2 cursor-pointer" onClick={() => handleSort('event_date')}>Date</th>
-                <th className="px-4 py-2 cursor-pointer" onClick={() => handleSort('participation_count')}>Participation</th>
-                <th className="px-4 py-2 cursor-pointer" onClick={() => handleSort('score')}>Score</th>
-                <th className="px-4 py-2 cursor-pointer" onClick={() => handleSort('rank')}>Rank</th>
+                <th className="px-4 py-2">Player</th>
+                <th className="px-4 py-2">Event</th>
+                <th
+                  className="px-4 py-2 cursor-pointer"
+                  onClick={() => handleSort('event_date')}
+                >
+                  Date
+                </th>
+                <th className="px-4 py-2">Participation</th>
+                <th className="px-4 py-2">Score</th>
+                <th className="px-4 py-2">Rank</th>
                 <th className="px-4 py-2">Comments</th>
               </tr>
             </thead>
             <tbody>
-              {paginatedEvents.map(ev => (
-                <tr key={ev.id} className="border-t border-gray-700 hover:bg-gray-800/60 transition-all">
+              {paginatedEvents.map((ev) => (
+                <tr
+                  key={ev.id}
+                  className="border-t border-gray-700 hover:bg-gray-800/60 transition-all"
+                >
                   <td className="px-4 py-2">{ev.players?.full_name || 'N/A'}</td>
                   <td className="px-4 py-2">{ev.event_thresholds?.event_name || 'N/A'}</td>
-                  <td className="px-4 py-2">{ev.event_date}</td>
-                  <td className="px-4 py-2">{ev.participation_count}</td>
-                  <td className="px-4 py-2">{ev.score}</td>
-                  <td className="px-4 py-2">{ev.rank}</td>
-                  <td className="px-4 py-2">{ev.comments}</td>
+                  <td className="px-4 py-2">{ev.event_date ? ev.event_date.substring(0, 10) : '-'}</td>
+                  <td className="px-4 py-2">{ev.participation_count ?? 0}</td>
+                  <td className="px-4 py-2">{ev.score ?? 0}</td>
+                  <td className="px-4 py-2">{ev.rank ?? '-'}</td>
+                  <td className="px-4 py-2">{ev.comments ?? '-'}</td>
                 </tr>
               ))}
+              {paginatedEvents.length === 0 && (
+                <tr>
+                  <td colSpan="7" className="text-center py-6 text-gray-400 italic">
+                    No records found.
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
@@ -273,14 +377,14 @@ export default function Events() {
         <div className="flex justify-center gap-3 mt-6">
           <button
             disabled={page <= 1}
-            onClick={() => setPage(prev => 1)}
+            onClick={() => setPage(1)}
             className="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded disabled:opacity-40"
           >
             {'<<'}
           </button>
           <button
             disabled={page <= 1}
-            onClick={() => setPage(prev => prev - 1)}
+            onClick={() => setPage((p) => Math.max(1, p - 1))}
             className="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded disabled:opacity-40"
           >
             {'<'}
@@ -290,14 +394,14 @@ export default function Events() {
           </span>
           <button
             disabled={page >= totalPages}
-            onClick={() => setPage(prev => prev + 1)}
+            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
             className="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded disabled:opacity-40"
           >
             {'>'}
           </button>
           <button
             disabled={page >= totalPages}
-            onClick={() => setPage(prev => totalPages)}
+            onClick={() => setPage(totalPages)}
             className="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded disabled:opacity-40"
           >
             {'>>'}
@@ -306,4 +410,4 @@ export default function Events() {
       </div>
     </div>
   );
-                }
+              }
