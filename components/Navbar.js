@@ -106,7 +106,7 @@ export default function Navbar() {
                 </div>
               </div>
 
-              <Link href="/playerdata" className="hover:text-blue-400 transition-colors">Player Data</Link>
+              //<Link href="/playerdata" className="hover:text-blue-400 transition-colors">Player Data</Link>
               <Link href="/hof" className="hover:text-blue-400 transition-colors">Hall of Fame</Link>
 
               {role === 'admin' && (
@@ -170,7 +170,7 @@ export default function Navbar() {
                 </div>
               </details>
 
-              <Link href="/playerdata" onClick={handleMenuClick} className="block hover:text-blue-400 transition">Player Data</Link>
+              //<Link href="/playerdata" onClick={handleMenuClick} className="block hover:text-blue-400 transition">Player Data</Link>
               <Link href="/hof" onClick={handleMenuClick} className="block hover:text-blue-400 transition">Hall of Fame</Link>
 
               {role === 'admin' && (
