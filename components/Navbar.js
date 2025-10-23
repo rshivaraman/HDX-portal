@@ -84,7 +84,7 @@ export default function Navbar() {
               </span>
               <Link href="/profile" className="hover:text-blue-400 transition-colors">Profile</Link>
               <Link href="/dashboard" className="hover:text-blue-400 transition-colors">Dashboard</Link>
-							<Link href="/bulkreg" onClick={handleMenuClick} className="block hover:text-blue-400 transition">Bulk User Registration</Link>
+			<Link href="/bulkreg" className="block hover:text-blue-400 transition-colors">Bulk User Registration</Link>
               {/* Events Dropdown */}
               <div className="relative">
                 <button
@@ -159,7 +159,7 @@ export default function Navbar() {
               </span>
               <Link href="/profile" onClick={handleMenuClick} className="block hover:text-blue-400 transition">Profile</Link>
               <Link href="/dashboard" onClick={handleMenuClick} className="block hover:text-blue-400 transition">Dashboard</Link>
-
+			<Link href="/bulkreg" onClick={handleMenuClick} className="block hover:text-blue-400 transition">Bulk User Registration</Link>
               {/* “Events” submenu inside mobile */}
               <details className="bg-gray-900 rounded-lg">
                 <summary className="cursor-pointer px-4 py-2 hover:text-blue-400 select-none">Events</summary>
