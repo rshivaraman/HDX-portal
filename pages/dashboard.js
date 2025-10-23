@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabaseClient';
 
-export default function Dashboard() {
+export default function UnifiedDashboard() {
   const [players, setPlayers] = useState([]);
   const [ranks, setRanks] = useState([]);
   const [role, setRole] = useState(null);
@@ -18,37 +18,32 @@ export default function Dashboard() {
   const [form, setForm] = useState({});
   const [showModal, setShowModal] = useState(false);
 
-  const beastTypes = ['Fire', 'Water', 'Grass', 'Physical'];
-  const troopTypes = ['Infantry', 'Rider', 'Ranged', 'Engine'];
-  const specialistOptions = ['Field', 'Rally', 'Garrison', 'Farm'];
-  const heroTypes = ['Infantry', 'Rider', 'Ranged', 'Engine'];
-
-  const fetchUserRole = async () => {
-    const { data: { session } } = await supabase.auth.getSession();
-    const email = session?.user?.email;
-    if (!email) return setRole(null);
-    const { data, error } = await supabase.from('players').select('role').eq('email', email).single();
-    if (error || !data) return setRole(null);
-    setRole(data.role);
-  };
-
-  const fetchPlayers = async () => {
-    const { data, error } = await supabase.from('players').select('*').order('created_at', { ascending: false });
-    if (!error) setPlayers(data || []);
-  };
-
-  const fetchRanks = async () => {
-    const { data, error } = await supabase.from('ranks').select('*').order('min_might', { ascending: true });
-    if (!error) setRanks(data || []);
-  };
+  const BEAST_TYPES = ['Fire', 'Water', 'Grass', 'Physical'];
+  const TROOP_TYPES = ['Infantry', 'Rider', 'Ranged', 'Engine'];
+  const SPECIALISTS = ['Field', 'Rally', 'Garrison', 'Farm'];
+  const HERO_TYPES = ['Infantry', 'Rider', 'Ranged', 'Farmer', 'Leader'];
 
   useEffect(() => {
-    (async () => {
-      await fetchUserRole();
-      await fetchPlayers();
-      await fetchRanks();
+    const fetchData = async () => {
+      // Get user role
+      const { data: { session } } = await supabase.auth.getSession();
+      const email = session?.user?.email;
+      if (email) {
+        const { data: roleData } = await supabase.from('players').select('role').eq('email', email).single();
+        setRole(roleData?.role || 'member');
+      }
+
+      // Get players
+      const { data: playerData } = await supabase.from('players').select('*').order('full_name', { ascending: true });
+      setPlayers(playerData || []);
+
+      // Get ranks
+      const { data: rankData } = await supabase.from('ranks').select('*').order('min_might', { ascending: true });
+      setRanks(rankData || []);
+
       setLoading(false);
-    })();
+    };
+    fetchData();
   }, []);
 
   const filteredPlayers = players
@@ -64,8 +59,7 @@ export default function Dashboard() {
       if (!sortField) return 0;
       const valA = a[sortField] || '';
       const valB = b[sortField] || '';
-      if (typeof valA === 'string')
-        return sortOrder === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
+      if (typeof valA === 'string') return sortOrder === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
       return sortOrder === 'asc' ? valA - valB : valB - valA;
     });
 
@@ -86,31 +80,43 @@ export default function Dashboard() {
 
   const handleSave = async () => {
     if (role !== 'admin') return alert('You are not authorized.');
-    const { error } = await supabase.from('players').upsert(form);
+    if (!editingPlayer) return;
+
+    const record = {
+      troop_type: form.troop_type || null,
+      troop_specialist: form.troop_specialist || null,
+      top_beast_type: form.top_beast_type || null,
+      top_beast_might: form.top_beast_might ? Number(form.top_beast_might) : null,
+      top_hero_type: form.top_hero_type || null,
+      top_hero_name: form.top_hero_name || null,
+      top_hero_might: form.top_hero_might ? Number(form.top_hero_might) : null,
+      battle_rating: form.battle_rating ? Number(form.battle_rating) : 0,
+      might: form.might ? Number(form.might) : 0,
+      deaths: form.deaths ? Number(form.deaths) : 0,
+      rank_id: form.rank_id || null,
+    };
+
+    const { error } = await supabase.from('players').update(record).eq('id', editingPlayer);
     if (error) return alert('Error updating player: ' + error.message);
+
     setShowModal(false);
     setEditingPlayer(null);
     setForm({});
-    fetchPlayers();
+    const { data: updatedPlayers } = await supabase.from('players').select('*').order('full_name');
+    setPlayers(updatedPlayers || []);
   };
 
   const handleDelete = async (id) => {
     if (role !== 'admin') return alert('You are not authorized.');
     if (!confirm('Are you sure you want to delete this player?')) return;
+
     const { error } = await supabase.from('players').delete().eq('id', id);
     if (error) return alert('Error deleting player: ' + error.message);
-    fetchPlayers();
+
+    setPlayers(prev => prev.filter(p => p.id !== id));
   };
 
-  const handleRankChange = async (playerId, rankId) => {
-    if (role !== 'admin') return;
-    const { error } = await supabase.from('players').update({ rank_id: rankId }).eq('id', playerId);
-    if (error) return alert('Error updating rank: ' + error.message);
-    fetchPlayers();
-  };
-
-  if (loading)
-    return <div className="flex justify-center items-center h-screen text-white text-lg">Loading dashboard...</div>;
+  if (loading) return <div className="flex justify-center items-center h-screen text-white text-lg">Loading dashboard...</div>;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-black to-gray-800 py-10 px-4 text-white">
@@ -129,7 +135,7 @@ export default function Dashboard() {
         <div className="flex flex-wrap gap-3 mb-4">
           <select value={filters.troop} onChange={(e) => setFilters({ ...filters, troop: e.target.value })} className="bg-gray-800 border border-gray-600 p-3 rounded-lg">
             <option value="all">Troop: All</option>
-            {troopTypes.map(t => <option key={t} value={t}>{t}</option>)}
+            {TROOP_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
           </select>
           <select value={filters.farm} onChange={(e) => setFilters({ ...filters, farm: e.target.value })} className="bg-gray-800 border border-gray-600 p-3 rounded-lg">
             <option value="all">Farm: All</option>
@@ -154,7 +160,7 @@ export default function Dashboard() {
           <table className="min-w-full text-sm text-gray-300">
             <thead className="bg-gradient-to-r from-blue-600 to-purple-600 text-white">
               <tr>
-                {['Name','Email','Troop','Might','Battle Rating','Top Hero','Top Beast','Specialist','Actions'].map(col => (
+                {['Name','Email','Troop','Specialist','Might','Battle Rating','Top Hero','Top Beast','Deaths','Actions'].map(col => (
                   <th key={col} className="px-4 py-2">{col}</th>
                 ))}
               </tr>
@@ -164,12 +170,13 @@ export default function Dashboard() {
                 <tr key={player.id} className="hover:bg-gray-800 border-t border-gray-700 transition-all">
                   <td className="px-4 py-2">{player.full_name}</td>
                   <td className="px-4 py-2">{player.email}</td>
-                  <td className="px-4 py-2">{player.troop_type}</td>
-                  <td className="px-4 py-2">{player.might}</td>
+                  <td className="px-4 py-2">{player.troop_type || '-'}</td>
+                  <td className="px-4 py-2">{player.troop_specialist || '-'}</td>
+                  <td className="px-4 py-2">{player.might || 0}</td>
                   <td className="px-4 py-2">{player.battle_rating || '-'}</td>
                   <td className="px-4 py-2">{player.top_hero_name || '-'}</td>
                   <td className="px-4 py-2">{player.top_beast_type || '-'}</td>
-                  <td className="px-4 py-2">{player.player_specialist || '-'}</td>
+                  <td className="px-4 py-2">{player.deaths || 0}</td>
                   <td className="px-4 py-2 flex justify-center gap-2">
                     {role === 'admin' ? (
                       <>
@@ -184,7 +191,7 @@ export default function Dashboard() {
               ))}
               {displayed.length === 0 && (
                 <tr>
-                  <td colSpan="9" className="text-center py-6 text-gray-400 italic">No players found.</td>
+                  <td colSpan="10" className="text-center py-6 text-gray-400 italic">No players found.</td>
                 </tr>
               )}
             </tbody>
@@ -200,7 +207,7 @@ export default function Dashboard() {
       </div>
 
       {/* Edit Player Modal */}
-      {showModal && (
+      {showModal && role === 'admin' && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex justify-center items-center z-50">
           <div className="bg-gray-900 border border-gray-700 p-6 rounded-2xl shadow-2xl w-full max-w-2xl">
             <h3 className="text-xl font-bold mb-4 text-center">Edit Player</h3>
@@ -209,24 +216,29 @@ export default function Dashboard() {
               <input name="email" placeholder="Email" value={form.email || ''} onChange={handleChange} className="p-3 rounded-lg bg-gray-800 border border-gray-600 text-white" />
               <select name="troop_type" value={form.troop_type || ''} onChange={handleChange} className="p-3 rounded-lg bg-gray-800 border border-gray-600 text-white">
                 <option value="">Select Troop Type</option>
-                {troopTypes.map(t => <option key={t} value={t}>{t}</option>)}
+                {TROOP_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+              </select>
+              <select name="troop_specialist" value={form.troop_specialist || ''} onChange={handleChange} className="p-3 rounded-lg bg-gray-800 border border-gray-600 text-white">
+                <option value="">Select Specialist</option>
+                {SPECIALISTS.map(s => <option key={s} value={s}>{s}</option>)}
               </select>
               <input name="might" type="number" placeholder="Might" value={form.might || ''} onChange={handleChange} className="p-3 rounded-lg bg-gray-800 border border-gray-600 text-white" />
               <input name="battle_rating" type="number" placeholder="Battle Rating" value={form.battle_rating || ''} onChange={handleChange} className="p-3 rounded-lg bg-gray-800 border border-gray-600 text-white" />
               <select name="top_beast_type" value={form.top_beast_type || ''} onChange={handleChange} className="p-3 rounded-lg bg-gray-800 border border-gray-600 text-white">
                 <option value="">Top Beast Type</option>
-                {beastTypes.map(t => <option key={t} value={t}>{t}</option>)}
+                {BEAST_TYPES.map(b => <option key={b} value={b}>{b}</option>)}
               </select>
               <input name="top_beast_might" type="number" placeholder="Top Beast Might" value={form.top_beast_might || ''} onChange={handleChange} className="p-3 rounded-lg bg-gray-800 border border-gray-600 text-white" />
               <select name="top_hero_type" value={form.top_hero_type || ''} onChange={handleChange} className="p-3 rounded-lg bg-gray-800 border border-gray-600 text-white">
                 <option value="">Top Hero Type</option>
-                {heroTypes.map(h => <option key={h} value={h}>{h}</option>)}
+                {HERO_TYPES.map(h => <option key={h} value={h}>{h}</option>)}
               </select>
               <input name="top_hero_name" placeholder="Top Hero Name" value={form.top_hero_name || ''} onChange={handleChange} className="p-3 rounded-lg bg-gray-800 border border-gray-600 text-white" />
               <input name="top_hero_might" type="number" placeholder="Top Hero Might" value={form.top_hero_might || ''} onChange={handleChange} className="p-3 rounded-lg bg-gray-800 border border-gray-600 text-white" />
-              <select name="player_specialist" value={form.player_specialist || ''} onChange={handleChange} className="p-3 rounded-lg bg-gray-800 border border-gray-600 text-white">
-                <option value="">Select Specialist</option>
-                {specialistOptions.map(s => <option key={s} value={s}>{s}</option>)}
+              <input name="deaths" type="number" placeholder="Deaths" value={form.deaths || ''} onChange={handleChange} className="p-3 rounded-lg bg-gray-800 border border-gray-600 text-white" />
+              <select name="rank_id" value={form.rank_id || ''} onChange={handleChange} className="p-3 rounded-lg bg-gray-800 border border-gray-600 text-white">
+                <option value="">Select Rank</option>
+                {ranks.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
               </select>
             </div>
             <div className="flex justify-end gap-3 mt-6">
@@ -238,4 +250,4 @@ export default function Dashboard() {
       )}
     </div>
   );
-              }
+}
