@@ -84,7 +84,7 @@ export default function Navbar() {
               </span>
               <Link href="/profile" className="hover:text-blue-400 transition-colors">Profile</Link>
               <Link href="/dashboard" className="hover:text-blue-400 transition-colors">Dashboard</Link>
-
+							<Link href="/bulkreg" onClick={handleMenuClick} className="block hover:text-blue-400 transition">Bulk User Registration</Link>
               {/* Events Dropdown */}
               <div className="relative">
                 <button
