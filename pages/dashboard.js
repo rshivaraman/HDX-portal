@@ -202,4 +202,40 @@ export default function Dashboard() {
       {/* Edit Player Modal */}
       {showModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex justify-center items-center z-50">
-                
+          <div className="bg-gray-900 border border-gray-700 p-6 rounded-2xl shadow-2xl w-full max-w-2xl">
+            <h3 className="text-xl font-bold mb-4 text-center">Edit Player</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <input name="full_name" placeholder="Full Name" value={form.full_name || ''} onChange={handleChange} className="p-3 rounded-lg bg-gray-800 border border-gray-600 text-white" />
+              <input name="email" placeholder="Email" value={form.email || ''} onChange={handleChange} className="p-3 rounded-lg bg-gray-800 border border-gray-600 text-white" />
+              <select name="troop_type" value={form.troop_type || ''} onChange={handleChange} className="p-3 rounded-lg bg-gray-800 border border-gray-600 text-white">
+                <option value="">Select Troop Type</option>
+                {troopTypes.map(t => <option key={t} value={t}>{t}</option>)}
+              </select>
+              <input name="might" type="number" placeholder="Might" value={form.might || ''} onChange={handleChange} className="p-3 rounded-lg bg-gray-800 border border-gray-600 text-white" />
+              <input name="battle_rating" type="number" placeholder="Battle Rating" value={form.battle_rating || ''} onChange={handleChange} className="p-3 rounded-lg bg-gray-800 border border-gray-600 text-white" />
+              <select name="top_beast_type" value={form.top_beast_type || ''} onChange={handleChange} className="p-3 rounded-lg bg-gray-800 border border-gray-600 text-white">
+                <option value="">Top Beast Type</option>
+                {beastTypes.map(t => <option key={t} value={t}>{t}</option>)}
+              </select>
+              <input name="top_beast_might" type="number" placeholder="Top Beast Might" value={form.top_beast_might || ''} onChange={handleChange} className="p-3 rounded-lg bg-gray-800 border border-gray-600 text-white" />
+              <select name="top_hero_type" value={form.top_hero_type || ''} onChange={handleChange} className="p-3 rounded-lg bg-gray-800 border border-gray-600 text-white">
+                <option value="">Top Hero Type</option>
+                {heroTypes.map(h => <option key={h} value={h}>{h}</option>)}
+              </select>
+              <input name="top_hero_name" placeholder="Top Hero Name" value={form.top_hero_name || ''} onChange={handleChange} className="p-3 rounded-lg bg-gray-800 border border-gray-600 text-white" />
+              <input name="top_hero_might" type="number" placeholder="Top Hero Might" value={form.top_hero_might || ''} onChange={handleChange} className="p-3 rounded-lg bg-gray-800 border border-gray-600 text-white" />
+              <select name="player_specialist" value={form.player_specialist || ''} onChange={handleChange} className="p-3 rounded-lg bg-gray-800 border border-gray-600 text-white">
+                <option value="">Select Specialist</option>
+                {specialistOptions.map(s => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </div>
+            <div className="flex justify-end gap-3 mt-6">
+              <button onClick={() => setShowModal(false)} className="bg-gray-600 hover:bg-gray-700 px-5 py-2 rounded-lg">Cancel</button>
+              <button onClick={handleSave} className="bg-blue-600 hover:bg-blue-700 px-5 py-2 rounded-lg font-semibold">Save Changes</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+              }
