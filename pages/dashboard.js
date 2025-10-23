@@ -7,7 +7,6 @@ export default function Dashboard() {
   const [ranks, setRanks] = useState([]);
   const [role, setRole] = useState(null);
   const [loading, setLoading] = useState(true);
-
   const [search, setSearch] = useState('');
   const [filters, setFilters] = useState({ troop: 'all', farm: 'all', rank: 'all' });
   const [sortField, setSortField] = useState('');
@@ -19,9 +18,11 @@ export default function Dashboard() {
   const [form, setForm] = useState({});
   const [showModal, setShowModal] = useState(false);
 
-  const troopOptions = ['Infantry', 'Rider', 'Ranged', 'Garrison', 'Mixed'];
+  const beastTypes = ['Fire', 'Water', 'Grass', 'Physical'];
+  const troopTypes = ['Infantry', 'Rider', 'Ranged', 'Engine'];
+  const specialistOptions = ['Field', 'Rally', 'Garrison', 'Farm'];
+  const heroTypes = ['Infantry', 'Rider', 'Ranged', 'Engine'];
 
-  // ✅ Fetch user role
   const fetchUserRole = async () => {
     const { data: { session } } = await supabase.auth.getSession();
     const email = session?.user?.email;
@@ -31,7 +32,6 @@ export default function Dashboard() {
     setRole(data.role);
   };
 
-  // ✅ Fetch players & ranks
   const fetchPlayers = async () => {
     const { data, error } = await supabase.from('players').select('*').order('created_at', { ascending: false });
     if (!error) setPlayers(data || []);
@@ -51,7 +51,6 @@ export default function Dashboard() {
     })();
   }, []);
 
-  // ✅ Filtering + sorting
   const filteredPlayers = players
     .filter(p =>
       (search === '' ||
@@ -73,7 +72,6 @@ export default function Dashboard() {
   const totalPages = Math.ceil(filteredPlayers.length / perPage);
   const displayed = filteredPlayers.slice((page - 1) * perPage, page * perPage);
 
-  // ✅ Edit modal handlers
   const handleEdit = (player) => {
     if (role !== 'admin') return;
     setEditingPlayer(player.id);
@@ -112,16 +110,11 @@ export default function Dashboard() {
   };
 
   if (loading)
-    return (
-      <div className="flex justify-center items-center h-screen text-white text-lg">
-        Loading dashboard...
-      </div>
-    );
+    return <div className="flex justify-center items-center h-screen text-white text-lg">Loading dashboard...</div>;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-black to-gray-800 py-10 px-4 text-white">
       <div className="max-w-7xl mx-auto backdrop-blur-md bg-black/40 p-6 rounded-2xl shadow-2xl border border-white/20 space-y-6">
-
         <h2 className="text-3xl font-bold text-center bg-gradient-to-r from-blue-400 to-purple-500 bg-clip-text text-transparent">
           Alliance Dashboard
         </h2>
@@ -136,7 +129,7 @@ export default function Dashboard() {
         <div className="flex flex-wrap gap-3 mb-4">
           <select value={filters.troop} onChange={(e) => setFilters({ ...filters, troop: e.target.value })} className="bg-gray-800 border border-gray-600 p-3 rounded-lg">
             <option value="all">Troop: All</option>
-            {troopOptions.map(t => <option key={t} value={t}>{t}</option>)}
+            {troopTypes.map(t => <option key={t} value={t}>{t}</option>)}
           </select>
           <select value={filters.farm} onChange={(e) => setFilters({ ...filters, farm: e.target.value })} className="bg-gray-800 border border-gray-600 p-3 rounded-lg">
             <option value="all">Farm: All</option>
@@ -161,7 +154,7 @@ export default function Dashboard() {
           <table className="min-w-full text-sm text-gray-300">
             <thead className="bg-gradient-to-r from-blue-600 to-purple-600 text-white">
               <tr>
-                {['Name','Email','Country','IGG ID','Discord','Troop','Farm','Might','Rank','Actions'].map(col => (
+                {['Name','Email','Troop','Might','Battle Rating','Top Hero','Top Beast','Specialist','Actions'].map(col => (
                   <th key={col} className="px-4 py-2">{col}</th>
                 ))}
               </tr>
@@ -171,23 +164,12 @@ export default function Dashboard() {
                 <tr key={player.id} className="hover:bg-gray-800 border-t border-gray-700 transition-all">
                   <td className="px-4 py-2">{player.full_name}</td>
                   <td className="px-4 py-2">{player.email}</td>
-                  <td className="px-4 py-2">{player.country}</td>
-                  <td className="px-4 py-2">{player.igg_id}</td>
-                  <td className="px-4 py-2">{player.discord_id}</td>
                   <td className="px-4 py-2">{player.troop_type}</td>
-                  <td className="px-4 py-2">{player.farm_account ? 'Yes' : 'No'}</td>
                   <td className="px-4 py-2">{player.might}</td>
-                  <td className="px-4 py-2">
-                    <select
-                      value={player.rank_id || ''}
-                      onChange={(e) => handleRankChange(player.id, e.target.value || null)}
-                      disabled={role !== 'admin'}
-                      className={`bg-gray-800 border border-gray-600 p-1 rounded-lg text-white ${role !== 'admin' ? 'opacity-50 cursor-not-allowed' : ''}`}
-                    >
-                      <option value="">Auto/Unset</option>
-                      {ranks.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
-                    </select>
-                  </td>
+                  <td className="px-4 py-2">{player.battle_rating || '-'}</td>
+                  <td className="px-4 py-2">{player.top_hero_name || '-'}</td>
+                  <td className="px-4 py-2">{player.top_beast_type || '-'}</td>
+                  <td className="px-4 py-2">{player.player_specialist || '-'}</td>
                   <td className="px-4 py-2 flex justify-center gap-2">
                     {role === 'admin' ? (
                       <>
@@ -202,7 +184,7 @@ export default function Dashboard() {
               ))}
               {displayed.length === 0 && (
                 <tr>
-                  <td colSpan="10" className="text-center py-6 text-gray-400 italic">No players found.</td>
+                  <td colSpan="9" className="text-center py-6 text-gray-400 italic">No players found.</td>
                 </tr>
               )}
             </tbody>
@@ -217,38 +199,7 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* ✅ Edit Player Modal */}
+      {/* Edit Player Modal */}
       {showModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex justify-center items-center z-50">
-          <div className="bg-gray-900 border border-gray-700 p-6 rounded-2xl shadow-2xl w-full max-w-2xl">
-            <h3 className="text-xl font-bold mb-4 text-center">Edit Player</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <input name="full_name" placeholder="Full Name" value={form.full_name || ''} onChange={handleChange} className="p-3 rounded-lg bg-gray-800 border border-gray-600 text-white" />
-              <input name="email" placeholder="Email" value={form.email || ''} onChange={handleChange} className="p-3 rounded-lg bg-gray-800 border border-gray-600 text-white" />
-              <input name="country" placeholder="Country" value={form.country || ''} onChange={handleChange} className="p-3 rounded-lg bg-gray-800 border border-gray-600 text-white" />
-              <input name="discord_id" placeholder="Discord ID" value={form.discord_id || ''} onChange={handleChange} className="p-3 rounded-lg bg-gray-800 border border-gray-600 text-white" />
-              <input name="igg_id" placeholder="IGG ID" value={form.igg_id || ''} onChange={handleChange} className="p-3 rounded-lg bg-gray-800 border border-gray-600 text-white" />
-              <input name="might" type="number" placeholder="Might" value={form.might || ''} onChange={handleChange} className="p-3 rounded-lg bg-gray-800 border border-gray-600 text-white" />
-              <select name="troop_type" value={form.troop_type || ''} onChange={handleChange} className="p-3 rounded-lg bg-gray-800 border border-gray-600 text-white">
-                <option value="">Select Troop Type</option>
-                {troopOptions.map(t => <option key={t} value={t}>{t}</option>)}
-              </select>
-              <label className="flex items-center gap-2">
-                <input type="checkbox" name="farm_account" checked={form.farm_account || false} onChange={handleChange} className="accent-blue-500" />
-                Has Farm Account
-              </label>
-              <select name="rank_id" value={form.rank_id || ''} onChange={handleChange} className="p-3 rounded-lg bg-gray-800 border border-gray-600 text-white">
-                <option value="">Auto/Unset</option>
-                {ranks.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
-              </select>
-            </div>
-            <div className="flex justify-end gap-3 mt-6">
-              <button onClick={() => setShowModal(false)} className="bg-gray-600 hover:bg-gray-700 px-5 py-2 rounded-lg">Cancel</button>
-              <button onClick={handleSave} className="bg-blue-600 hover:bg-blue-700 px-5 py-2 rounded-lg font-semibold">Save Changes</button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
+                
