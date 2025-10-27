@@ -38,7 +38,7 @@ export default function Profile() {
           discord_id: data.discord_id || '',
           igg_id: data.igg_id || '',
           email: data.email || '',
-          troop_type: data.troop_specialist || '',
+          troop_type: data.troop_type || '',
           has_farm: data.has_farm || false,
           rank_id: data.rank_id || null,
           hero_name: data.hero_name || '',
