@@ -168,7 +168,7 @@ export default function Profile() {
           <input name="discord_id" placeholder="Discord ID" value={profile.discord_id} onChange={handleChange} className="p-3 rounded-lg bg-gray-800/70 border border-gray-600 text-white focus:ring-2 focus:ring-blue-500"/>
           <input name="igg_id" placeholder="IGG ID" value={profile.igg_id} onChange={handleChange} className="p-3 rounded-lg bg-gray-800/70 border border-gray-600 text-white focus:ring-2 focus:ring-blue-500"/>
           <input name="email" placeholder="Email" value={profile.email} disabled className="p-3 rounded-lg bg-gray-700 border border-gray-600 text-gray-400"/>
-          <select name="troop_specialist" value={profile.troop_specialist} onChange={handleChange} className="p-3 rounded-lg bg-gray-800/70 border border-gray-600 text-white focus:ring-2 focus:ring-blue-500">
+          <select name="troop_type" value={profile.troop_type} onChange={handleChange} className="p-3 rounded-lg bg-gray-800/70 border border-gray-600 text-white focus:ring-2 focus:ring-blue-500">
             <option value="">Select Troop Type</option>
             {troopOptions.map(t => <option key={t} value={t}>{t}</option>)}
           </select>
