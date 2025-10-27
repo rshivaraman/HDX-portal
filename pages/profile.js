@@ -10,7 +10,7 @@ export default function Profile() {
   const [avatarUrl, setAvatarUrl] = useState('');
   const [uploading, setUploading] = useState(false);
 
-  const troopOptions = ['Infantry', 'Rider', 'Ranged', 'Garrison', 'Mixed'];
+  const troopOptions = ['Infantry', 'Rider', 'Ranged', 'Farm', 'Mixed'];
 
   useEffect(() => {
     const loadProfile = async () => {
@@ -38,7 +38,7 @@ export default function Profile() {
           discord_id: data.discord_id || '',
           igg_id: data.igg_id || '',
           email: data.email || '',
-          troop_specialist: data.troop_specialist || '',
+          troop_type: data.troop_specialist || '',
           has_farm: data.has_farm || false,
           rank_id: data.rank_id || null,
           hero_name: data.hero_name || '',
