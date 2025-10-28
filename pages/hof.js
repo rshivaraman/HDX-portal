@@ -14,31 +14,37 @@ export default function HallOfFame() {
   const perPage = 20;
 
   useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const { data: hof } = await supabase.from('hof_view').select('*');
+        const { data: ach } = await supabase.from('achievements_view').select('*');
+        const { data: comp } = await supabase.from('comparison_view').select('*');
+        setHofData(hof || []);
+        setAchievements(ach || []);
+        setComparison(comp || []);
+      } catch (err) {
+        console.error('Fetch error:', err);
+      }
+    };
     fetchData();
   }, []);
-
-  const fetchData = async () => {
-    const { data: hof, error: hofErr } = await supabase.from('hof_view').select('*');
-    if (!hofErr) setHofData(hof);
-
-    const { data: ach, error: achErr } = await supabase.from('achievements_view').select('*');
-    if (!achErr) setAchievements(ach);
-
-    const { data: comp, error: compErr } = await supabase.from('comparison_view').select('*');
-    if (!compErr) setComparison(comp);
-  };
 
   const sortedHof = useMemo(() => {
     let data = [...hofData];
     if (search) {
-      const term = search.toLowerCase();
-      data = data.filter((p) => p.full_name?.toLowerCase().includes(term));
+      const s = search.toLowerCase();
+      data = data.filter(
+        (p) =>
+          p.full_name?.toLowerCase().includes(s) ||
+          p.role?.toLowerCase().includes(s) ||
+          p.igg_id?.toLowerCase().includes(s)
+      );
     }
     data.sort((a, b) => {
-      const valA = a[sortField] ?? 0;
-      const valB = b[sortField] ?? 0;
-      if (valA < valB) return sortAsc ? -1 : 1;
-      if (valA > valB) return sortAsc ? 1 : -1;
+      const va = a[sortField] ?? 0;
+      const vb = b[sortField] ?? 0;
+      if (va < vb) return sortAsc ? -1 : 1;
+      if (va > vb) return sortAsc ? 1 : -1;
       return 0;
     });
     return data.slice((page - 1) * perPage, page * perPage);
@@ -52,8 +58,32 @@ export default function HallOfFame() {
     }
   };
 
+  const trendIcon = (trend) => {
+    if (trend === 'Improved') return <span className="text-green-400 font-bold">▲</span>;
+    if (trend === 'Declined') return <span className="text-red-400 font-bold">▼</span>;
+    if (trend === 'New') return <span className="text-yellow-400 font-bold">⭐</span>;
+    return <span className="text-gray-400">—</span>;
+  };
+
+  const scoreBar = (prev, latest) => {
+    const maxVal = Math.max(prev || 0, latest || 1);
+    const prevWidth = ((prev || 0) / maxVal) * 100;
+    const latestWidth = ((latest || 0) / maxVal) * 100;
+    const barColor = latest > prev ? 'bg-green-500' : latest < prev ? 'bg-red-500' : 'bg-gray-400';
+    return (
+      <div className="flex items-center w-36">
+        <div className="w-full h-2 bg-gray-700 rounded relative">
+          <div className={`absolute top-0 left-0 h-2 ${barColor}`} style={{ width: `${latestWidth}%` }}></div>
+          <div className="absolute top-0 h-2 bg-gray-400 opacity-40" style={{ width: `${prevWidth}%` }}></div>
+        </div>
+      </div>
+    );
+  };
+
+  const top3ByBattle = [...hofData].sort((a, b) => (b.battle_rating || 0) - (a.battle_rating || 0)).slice(0, 3);
+
   return (
-    <div className="bg-gradient-to-br from-gray-900 via-gray-800 to-black min-h-screen text-white px-4 pt-28 pb-10 sm:pt-24 md:pt-28 lg:pt-32">
+    <div className="bg-gradient-to-br from-gray-900 via-gray-800 to-black min-h-screen text-white px-4 pt-28 pb-10 sm:pt-24">
       <div className="max-w-7xl mx-auto">
         <h1 className="text-4xl font-extrabold text-center mb-8 text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 to-orange-500 drop-shadow-md">
           👑 HDX Hall of Fame
@@ -85,18 +115,20 @@ export default function HallOfFame() {
         <div className="bg-gray-800/50 backdrop-blur-md p-6 rounded-2xl shadow-lg border border-gray-700 mb-6">
           <input
             type="text"
-            placeholder="🔍 Search..."
+            placeholder="🔍 Search by player, role, or IGG ID..."
             value={search}
-            onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setPage(1);
+            }}
             className="w-full p-3 rounded-lg bg-gray-700/60 placeholder-gray-400 text-white border border-gray-600 focus:ring-2 focus:ring-purple-500 focus:outline-none"
           />
         </div>
 
-        {/* Content */}
         {activeTab === 'leaderboard' && <LeaderboardTable data={sortedHof} handleSort={handleSort} sortField={sortField} sortAsc={sortAsc} />}
         {activeTab === 'achievements' && <AchievementsSection achievements={achievements} />}
-        {activeTab === 'comparison' && <ComparisonSection comparison={comparison} />}
-        {activeTab === 'hof' && <HOFSection hofMembers={hofData} />}
+        {activeTab === 'comparison' && <ComparisonSection comparison={comparison} scoreBar={scoreBar} trendIcon={trendIcon} />}
+        {activeTab === 'hof' && <HOFSection hofMembers={hofData} top3={top3ByBattle} />}
       </div>
     </div>
   );
@@ -109,27 +141,44 @@ function LeaderboardTable({ data, handleSort, sortField, sortAsc }) {
       <table className="w-full text-left text-gray-200">
         <thead className="bg-gray-900 text-gray-300">
           <tr>
-            {['Rank','Player','Role','Troop Type','Battle Rating','Might','Kills','Top Beast','Top Hero'].map((col,i)=>(
-              <th key={i} className="px-4 py-3 cursor-pointer" onClick={()=> handleSort(col.toLowerCase().replace(' ','_'))}>
-                {col} {sortField === col.toLowerCase().replace(' ','_') && (sortAsc ? ' ▲':' ▼')}
+            {[
+              { label: 'Rank', field: null },
+              { label: 'Player', field: null },
+              { label: 'Role', field: 'role' },
+              { label: 'Troop Type', field: 'troop_type' },
+              { label: 'Battle Rating', field: 'battle_rating' },
+              { label: 'Might', field: 'might' },
+            ].map((col, i) => (
+              <th key={i} className="px-4 py-3 cursor-pointer" onClick={() => col.field && handleSort(col.field)}>
+                {col.label}
+                {col.field === sortField && (sortAsc ? ' ▲' : ' ▼')}
               </th>
             ))}
           </tr>
         </thead>
         <tbody>
-          {data.map((p,i)=>(
-            <tr key={p.player_id+i} className={`hover:bg-gray-700/50 transition ${i<3?'bg-gray-800/70':''}`}>
-              <td className="px-4 py-3 font-semibold text-yellow-300">#{i+1}</td>
-              <td className="px-4 py-3">{p.full_name}</td>
-              <td className="px-4 py-3 text-gray-400">{p.role}</td>
-              <td className="px-4 py-3 text-gray-400">{p.troop_type||'—'}</td>
-              <td className="px-4 py-3 font-bold text-green-400">{p.battle_rating?.toLocaleString()}</td>
-              <td className="px-4 py-3 text-blue-400">{p.might?.toLocaleString()}</td>
-              <td className="px-4 py-3 text-red-400">{p.deaths?.toLocaleString()}</td>
-              <td className="px-4 py-3">{p.top_beast_might?.toLocaleString()||'—'}</td>
-              <td className="px-4 py-3">{p.top_hero_might?.toLocaleString()||'—'}</td>
+          {data.length > 0 ? (
+            data.map((p, i) => (
+              <tr key={p.player_id} className={`hover:bg-gray-700/50 ${i < 3 ? 'bg-gray-800/70' : ''}`}>
+                <td className="px-4 py-3 font-semibold text-yellow-300">#{i + 1}</td>
+                <td className="px-4 py-3 flex items-center gap-3">
+                  <img src={p.profile_image_url || '/default.png'} alt={p.full_name} className="w-10 h-10 rounded-full border border-gray-700" />
+                  <div>
+                    <div className="font-semibold">{p.full_name}</div>
+                    <div className="text-xs text-gray-400">Events: {p.total_events_participated || 0}</div>
+                  </div>
+                </td>
+                <td className="px-4 py-3">{p.role}</td>
+                <td className="px-4 py-3">{p.troop_type}</td>
+                <td className="px-4 py-3 font-bold text-green-400">{(p.battle_rating || 0).toLocaleString()}</td>
+                <td className="px-4 py-3 text-blue-400">{(p.might || 0).toLocaleString()}</td>
+              </tr>
+            ))
+          ) : (
+            <tr>
+              <td colSpan="6" className="text-center py-6 text-gray-400 italic">No data available.</td>
             </tr>
-          ))}
+          )}
         </tbody>
       </table>
     </div>
@@ -139,18 +188,20 @@ function LeaderboardTable({ data, handleSort, sortField, sortAsc }) {
 /* ---------------- Achievements Section ---------------- */
 function AchievementsSection({ achievements }) {
   if (!achievements.length) return <p className="text-center text-gray-400 italic">No achievements yet.</p>;
+
   return (
     <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
-      {achievements.map(a=>(
-        <div key={a.player_id+a.event_id} className="bg-gray-800 border border-gray-700 p-5 rounded-xl hover:border-yellow-400 shadow-md hover:shadow-xl">
+      {achievements.map((a) => (
+        <div key={a.player_id + (a.event_id || '')} className="bg-gray-800 border border-gray-700 p-5 rounded-xl shadow-md hover:border-yellow-400">
           <div className="flex items-center gap-3">
-            <img src={a.profile_image_url||'/default.png'} className="w-10 h-10 rounded-full"/>
+            <img src={a.profile_image_url || '/default.png'} alt={a.full_name} className="w-12 h-12 rounded-full" />
             <div>
               <h3 className="text-lg font-semibold text-yellow-300">{a.full_name}</h3>
-              <p className="text-gray-400 text-sm">{a.achievement_title} ({a.event_name})</p>
+              <p className="text-xs text-gray-400">IGG ID: {a.igg_id || '—'}</p>
+              <p className="text-gray-400 text-sm">{a.achievement_title || a.event_name}</p>
             </div>
           </div>
-          <p className="text-xs text-gray-500 mt-3">Score: {a.score}, Rank: {a.rank}</p>
+          <p className="text-xs text-gray-500 mt-3">Score: {a.score || 0}, Rank: {a.rank || '—'}</p>
         </div>
       ))}
     </div>
@@ -159,27 +210,72 @@ function AchievementsSection({ achievements }) {
 
 /* ---------------- Comparison Section ---------------- */
 function ComparisonSection({ comparison }) {
-  if (!comparison.length) return <p className="text-center text-gray-400 italic">No comparison data yet.</p>;
+  if (!comparison.length)
+    return <p className="text-center text-gray-400 italic">No comparison data yet.</p>;
+
+  // Trend Icon
+  const trendIcon = (prev, latest) => {
+    if (prev == null) return <span className="text-yellow-400 font-bold">⭐</span>;
+    if (latest > prev) return <span className="text-green-400 font-bold">▲</span>;
+    if (latest < prev) return <span className="text-red-400 font-bold">▼</span>;
+    return <span className="text-gray-400 font-bold">—</span>;
+  };
+
+  // Animated mini "worm" bar
+  const scoreBar = (prev, latest) => {
+    const maxVal = Math.max(prev || 0, latest || 0, 1);
+    const prevWidth = ((prev || 0) / maxVal) * 100;
+    const latestWidth = ((latest || 0) / maxVal) * 100;
+    return (
+      <div className="w-32 h-3 bg-gray-700 rounded overflow-hidden relative">
+        <div
+          className="absolute left-0 top-0 h-3 bg-gray-400 rounded animate-pulse opacity-50"
+          style={{ width: `${prevWidth}%` }}
+        ></div>
+        <div
+          className="absolute left-0 top-0 h-3 bg-green-400 rounded transition-all duration-700"
+          style={{ width: `${latestWidth}%` }}
+        ></div>
+      </div>
+    );
+  };
+
   return (
     <div className="overflow-x-auto rounded-xl border border-gray-700">
       <table className="w-full text-left text-gray-200">
         <thead className="bg-gray-900 text-gray-300">
           <tr>
-            {['Player','Prev Event','Prev Score','Latest Event','Latest Score','Difference','Trend'].map((col,i)=>(
+            {['Player', 'Prev Score', 'Latest Score', 'Difference', 'Trend', 'Performance'].map((col, i) => (
               <th key={i} className="px-4 py-3">{col}</th>
             ))}
           </tr>
         </thead>
         <tbody>
-          {comparison.map(c=>(
+          {comparison.map((c) => (
             <tr key={c.player_id} className="hover:bg-gray-700/50 transition">
-              <td className="px-4 py-3">{c.full_name}</td>
-              <td className="px-4 py-3">{c.prev_event_date||'—'}</td>
-              <td className="px-4 py-3">{c.prev_score||0}</td>
-              <td className="px-4 py-3">{c.latest_event_date||'—'}</td>
-              <td className="px-4 py-3">{c.latest_score||0}</td>
-              <td className="px-4 py-3">{c.score_difference||0}</td>
-              <td className="px-4 py-3">{c.performance_trend||'—'}</td>
+              <td className="px-4 py-3 flex items-center gap-2">
+                <img
+                  src={c.profile_image_url || '/default.png'}
+                  alt={c.full_name}
+                  className="w-8 h-8 rounded-full border border-gray-700"
+                />
+                <span>{c.full_name}</span>
+              </td>
+              <td className="px-4 py-3">{c.prev_score || 0}</td>
+              <td className="px-4 py-3">{c.latest_score || 0}</td>
+              <td
+                className={`px-4 py-3 font-semibold ${
+                  (c.latest_score - c.prev_score) > 0
+                    ? 'text-green-400'
+                    : (c.latest_score - c.prev_score) < 0
+                    ? 'text-red-400'
+                    : 'text-gray-300'
+                }`}
+              >
+                {c.prev_score != null ? (c.latest_score - c.prev_score > 0 ? `+${c.latest_score - c.prev_score}` : c.latest_score - c.prev_score) : c.latest_score}
+              </td>
+              <td className="px-4 py-3 text-center">{trendIcon(c.prev_score, c.latest_score)}</td>
+              <td className="px-4 py-3">{scoreBar(c.prev_score, c.latest_score)}</td>
             </tr>
           ))}
         </tbody>
@@ -187,46 +283,76 @@ function ComparisonSection({ comparison }) {
     </div>
   );
 }
-
+  
+/* ---------------- HOF Section ---------------- */
 /* ---------------- HOF Section ---------------- */
 function HOFSection({ hofMembers }) {
-  if (!hofMembers.length) return <p className="text-center text-gray-400 italic">No legends yet.</p>;
+  if (!hofMembers.length)
+    return <p className="text-center text-gray-400 italic">No legends yet.</p>;
 
-  const featured = hofMembers.slice(0,3);
+  // Sort by battle_rating descending
+  const sorted = [...hofMembers].sort((a, b) => (b.battle_rating || 0) - (a.battle_rating || 0));
 
   return (
-    <div className="space-y-6">
-      {/* Featured Legends */}
-      <div className="grid sm:grid-cols-3 gap-6 mb-6">
-        {featured.map(p=>(
-          <div key={p.player_id} className="bg-gradient-to-br from-gray-900 via-gray-800 to-black p-6 rounded-2xl border border-yellow-500 shadow-lg hover:shadow-2xl transition text-center">
-            <img src={p.profile_image_url||'/default.png'} className="w-20 h-20 rounded-full mx-auto mb-4 border-2 border-yellow-400"/>
-            <h3 className="text-xl font-bold text-yellow-300">{p.full_name}</h3>
-            <p className="text-gray-400 text-sm">{p.award_title || 'Alliance Legend'}</p>
-            <p className="text-xs text-gray-500 mt-2">Inducted: {new Date(p.hof_event_date).getFullYear()}</p>
-            <p className="text-sm mt-2">Might: {p.might}, Battle Rating: {p.battle_rating}, Kills: {p.deaths}</p>
-            <p className="text-sm">Total Events: {p.total_events_participated}</p>
-          </div>
-        ))}
-      </div>
+    <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
+      {sorted.map((p, i) => {
+        let borderClass = 'border-gray-700';
+        let bgClass = 'bg-gray-800';
+        let medalEmoji = '';
+        let glowClass = '';
+        let textClass = 'text-white'; // default for bronze
 
-      {/* Full HOF */}
-      <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
-        {hofMembers.map(p=>(
-          <div key={p.player_id+p.hof_id} className="bg-gray-800 border border-gray-700 p-5 rounded-xl shadow-md">
-            <img src={p.profile_image_url||'/default.png'} className="w-16 h-16 rounded-full mx-auto mb-3 border-2 border-yellow-400"/>
-            <h3 className="text-lg font-semibold text-yellow-300 text-center">{p.full_name}</h3>
-            <p className="text-gray-400 text-sm text-center">{p.award_title || 'Alliance Legend'}</p>
-            <p className="text-xs text-gray-500 text-center mt-1">Inducted: {new Date(p.hof_event_date).getFullYear()}</p>
-            <div className="mt-2 text-sm text-gray-200 space-y-1">
-              <p>Might: {p.might?.toLocaleString() || 0}</p>
-              <p>Battle Rating: {p.battle_rating?.toLocaleString() || 0}</p>
-              <p>Kills: {p.deaths?.toLocaleString() || 0}</p>
+        // Assign metals for top 3
+        if (i === 0) {
+          borderClass = 'border-yellow-400';
+          bgClass = 'bg-gradient-to-br from-yellow-400 via-yellow-300 to-yellow-400';
+          medalEmoji = '🥇';
+          glowClass = 'shadow-glow-gold';
+          textClass = 'text-gray-700'; // mid-black font for gold
+        } else if (i === 1) {
+          borderClass = 'border-gray-300';
+          bgClass = 'bg-gradient-to-br from-gray-300 via-gray-200 to-gray-300';
+          medalEmoji = '🥈';
+          glowClass = 'shadow-glow-silver';
+          textClass = 'text-gray-700'; // mid-black font for silver
+        } else if (i === 2) {
+          borderClass = 'border-[#b87333]'; // copperish bronze
+          bgClass = 'bg-gradient-to-br from-[#b87333] via-[#c2885e] to-[#b87333]';
+          medalEmoji = '🥉';
+          glowClass = 'shadow-glow-bronze';
+          textClass = 'text-white'; // white font for bronze
+        }
+
+        return (
+          <div
+            key={p.player_id}
+            className={`relative ${bgClass} border ${borderClass} p-5 rounded-xl shadow-lg overflow-hidden ${glowClass}`}
+          >
+            <div className="flex items-center gap-3">
+              <img
+                src={p.profile_image_url || '/default.png'}
+                alt={p.full_name}
+                className="w-16 h-16 rounded-full border-2 border-white"
+              />
+              <div className="flex-1">
+                <h3 className={`text-lg font-bold ${textClass}`}>{p.full_name}</h3>
+                <p className={`text-xs ${textClass}`}>{p.role || '—'}</p>
+                <p className={`text-xs ${textClass}`}>IGG ID: {p.igg_id || '—'}</p>
+              </div>
+            </div>
+            <div className={`mt-3 text-sm space-y-1 ${textClass}`}>
+              <p>Might: {(p.might || 0).toLocaleString()}</p>
+              <p>Battle Rating: {(p.battle_rating || 0).toLocaleString()}</p>
               <p>Total Events: {p.total_events_participated || 0}</p>
             </div>
+            {medalEmoji && (
+              <div className="absolute top-2 right-2 text-2xl font-bold animate-zoom">
+                {medalEmoji}
+              </div>
+            )}
           </div>
-        ))}
-      </div>
+        );
+      })}
     </div>
   );
 }
