@@ -211,87 +211,140 @@ function AchievementsSection({ achievements }) {
 /* ---------------- Comparison Section ---------------- */
 function ComparisonSection({ comparison }) {
   if (!comparison.length)
-    return <p className="text-center text-gray-400 italic">No comparison data yet.</p>;
+    return (
+      <p className="text-center text-gray-400 italic">
+        No comparison data yet.
+      </p>
+    );
 
-  // Trend Icon
-  const trendIcon = (prev, latest) => {
-    if (prev == null) return <span className="text-yellow-400 font-bold">⭐</span>;
-    if (latest > prev) return <span className="text-green-400 font-bold">▲</span>;
-    if (latest < prev) return <span className="text-red-400 font-bold">▼</span>;
-    return <span className="text-gray-400 font-bold">—</span>;
+  const getTrendIcon = (trend) => {
+    if (trend === 'Improved') return <span className="text-green-400 animate-bounce">▲</span>;
+    if (trend === 'Declined') return <span className="text-red-400 animate-bounce">▼</span>;
+    if (trend === 'New') return <span className="text-yellow-400 animate-pulse">⭐</span>;
+    return <span className="text-gray-400">—</span>;
   };
 
-  // Animated mini "worm" bar
-  const scoreBar = (prev, latest) => {
-    const maxVal = Math.max(prev || 0, latest || 0, 1);
-    const prevWidth = ((prev || 0) / maxVal) * 100;
-    const latestWidth = ((latest || 0) / maxVal) * 100;
-    return (
-      <div className="w-32 h-3 bg-gray-700 rounded overflow-hidden relative">
-        <div
-          className="absolute left-0 top-0 h-3 bg-gray-400 rounded animate-pulse opacity-50"
-          style={{ width: `${prevWidth}%` }}
-        ></div>
-        <div
-          className="absolute left-0 top-0 h-3 bg-green-400 rounded transition-all duration-700"
-          style={{ width: `${latestWidth}%` }}
-        ></div>
-      </div>
-    );
+  const getCardStyle = (index) => {
+    switch (index) {
+      case 0:
+        return 'from-yellow-400/40 to-amber-200/20 border-yellow-400 text-black';
+      case 1:
+        return 'from-gray-300/40 to-gray-100/20 border-gray-300 text-black';
+      case 2:
+        return 'from-orange-500/40 to-amber-300/20 border-orange-400 text-gray-100';
+      default:
+        return 'from-gray-800/70 to-gray-700/60 border-gray-700 text-gray-200';
+    }
   };
 
   return (
-    <div className="overflow-x-auto rounded-xl border border-gray-700">
-      <table className="w-full text-left text-gray-200">
-        <thead className="bg-gray-900 text-gray-300">
-          <tr>
-            {['Player', 'Prev Score', 'Latest Score', 'Difference', 'Trend', 'Performance'].map((col, i) => (
-              <th key={i} className="px-4 py-3">{col}</th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {comparison.map((c) => (
-            <tr key={c.player_id} className="hover:bg-gray-700/50 transition">
-              <td className="px-4 py-3 flex items-center gap-2">
-                <img
-                  src={c.profile_image_url || '/default.png'}
-                  alt={c.full_name}
-                  className="w-8 h-8 rounded-full border border-gray-700"
-                />
-                <span>{c.full_name}</span>
-              </td>
-              <td className="px-4 py-3">{c.prev_score || 0}</td>
-              <td className="px-4 py-3">{c.latest_score || 0}</td>
-              <td
-                className={`px-4 py-3 font-semibold ${
-                  (c.latest_score - c.prev_score) > 0
-                    ? 'text-green-400'
-                    : (c.latest_score - c.prev_score) < 0
-                    ? 'text-red-400'
-                    : 'text-gray-300'
-                }`}
-              >
-                {c.prev_score != null ? (c.latest_score - c.prev_score > 0 ? `+${c.latest_score - c.prev_score}` : c.latest_score - c.prev_score) : c.latest_score}
-              </td>
-              <td className="px-4 py-3 text-center">{trendIcon(c.prev_score, c.latest_score)}</td>
-              <td className="px-4 py-3">{scoreBar(c.prev_score, c.latest_score)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
+      {comparison.map((c, i) => {
+        const diff = (c.latest_score || 0) - (c.prev_score || 0);
+        const trend =
+          diff > 0 ? 'Improved' : diff < 0 ? 'Declined' : 'New';
+        const percentChange =
+          c.prev_score && c.prev_score !== 0
+            ? ((diff / c.prev_score) * 100).toFixed(1)
+            : '—';
+        const barPercent =
+          c.prev_score && c.prev_score !== 0
+            ? Math.min(100, ((c.latest_score / c.prev_score) * 100).toFixed(1))
+            : 100;
+
+        return (
+          <div
+            key={c.player_id}
+            className={`relative p-5 rounded-2xl border shadow-lg bg-gradient-to-br ${getCardStyle(
+              i
+            )} overflow-hidden group transition-transform duration-300 hover:scale-[1.03]`}
+          >
+            {/* Shimmer effect */}
+            <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent animate-[shimmer_3s_linear_infinite]"></div>
+
+            {/* Pulsing glow for top 3 */}
+            {i < 3 && (
+              <div
+                className={`absolute inset-0 rounded-2xl border-2 ${
+                  i === 0
+                    ? 'border-yellow-400 shadow-[0_0_20px_5px_rgba(255,215,0,0.4)]'
+                    : i === 1
+                    ? 'border-gray-300 shadow-[0_0_20px_5px_rgba(192,192,192,0.3)]'
+                    : 'border-orange-400 shadow-[0_0_20px_5px_rgba(205,127,50,0.3)]'
+                } animate-pulse`}
+              ></div>
+            )}
+
+            <div className="relative z-10 flex items-center gap-3 mb-3">
+              <img
+                src={c.profile_image_url || '/default.png'}
+                alt={c.full_name}
+                className="w-12 h-12 rounded-full border border-gray-700"
+              />
+              <div>
+                <h3 className="font-bold text-lg">{c.full_name}</h3>
+                <p className="text-xs text-gray-400">{c.role || '—'}</p>
+              </div>
+            </div>
+
+            <div className="relative z-10 space-y-2">
+              <div className="flex justify-between text-sm text-gray-300">
+                <span>Prev: {c.prev_score || 0}</span>
+                <span>Now: {c.latest_score || 0}</span>
+              </div>
+
+              {/* Worm-style animated progress bar */}
+              <div className="w-full h-3 bg-gray-700/60 rounded-full overflow-hidden shadow-inner">
+                <div
+                  style={{
+                    width: `${barPercent}%`,
+                    animation: 'wormMove 2s ease-in-out infinite',
+                  }}
+                  className={`h-full rounded-full ${
+                    diff > 0
+                      ? 'bg-green-400'
+                      : diff < 0
+                      ? 'bg-red-400'
+                      : 'bg-yellow-400'
+                  } shadow-lg`}
+                ></div>
+              </div>
+
+              <div className="flex justify-between items-center mt-2">
+                <div className="flex items-center gap-2 text-sm">
+                  {getTrendIcon(trend)}
+                  <span
+                    className={`font-semibold ${
+                      trend === 'Improved'
+                        ? 'text-green-400'
+                        : trend === 'Declined'
+                        ? 'text-red-400'
+                        : 'text-yellow-300'
+                    }`}
+                  >
+                    {trend === 'New'
+                      ? 'New Entry'
+                      : `${diff > 0 ? '+' : ''}${percentChange}%`}
+                  </span>
+                </div>
+                <span className="text-xs text-gray-400 italic">vs last event</span>
+              </div>
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }
-  
-/* ---------------- HOF Section ---------------- */
-/* ---------------- HOF Section ---------------- */
+
+/* ---------------- HOF Section with Mini Bars ---------------- */
 function HOFSection({ hofMembers }) {
   if (!hofMembers.length)
     return <p className="text-center text-gray-400 italic">No legends yet.</p>;
 
   // Sort by battle_rating descending
   const sorted = [...hofMembers].sort((a, b) => (b.battle_rating || 0) - (a.battle_rating || 0));
+  const topBattleRating = sorted[0]?.battle_rating || 1; // avoid divide by zero
 
   return (
     <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -316,12 +369,15 @@ function HOFSection({ hofMembers }) {
           glowClass = 'shadow-glow-silver';
           textClass = 'text-gray-700'; // mid-black font for silver
         } else if (i === 2) {
-          borderClass = 'border-[#b87333]'; // copperish bronze
+          borderClass = 'border-[#b87333]';
           bgClass = 'bg-gradient-to-br from-[#b87333] via-[#c2885e] to-[#b87333]';
           medalEmoji = '🥉';
           glowClass = 'shadow-glow-bronze';
-          textClass = 'text-white'; // white font for bronze
+          textClass = 'text-white';
         }
+
+        // Calculate bar width relative to top player
+        const ratingPercent = Math.min(100, ((p.battle_rating || 0) / topBattleRating) * 100);
 
         return (
           <div
@@ -340,11 +396,25 @@ function HOFSection({ hofMembers }) {
                 <p className={`text-xs ${textClass}`}>IGG ID: {p.igg_id || '—'}</p>
               </div>
             </div>
-            <div className={`mt-3 text-sm space-y-1 ${textClass}`}>
+
+            {/* Mini Bar */}
+            <div className="mt-3">
+              <div className="w-full h-2 bg-gray-700 rounded-full overflow-hidden">
+                <div
+                  className={`h-2 rounded-full bg-gradient-to-r from-green-400 via-yellow-400 to-red-400 animate-bar`}
+                  style={{ width: `${ratingPercent}%` }}
+                ></div>
+              </div>
+              <p className={`text-xs mt-1 ${textClass}`}>Battle Rating: {(p.battle_rating || 0).toLocaleString()}</p>
+            </div>
+
+            {/* Additional Stats */}
+            <div className={`mt-2 text-sm space-y-1 ${textClass}`}>
               <p>Might: {(p.might || 0).toLocaleString()}</p>
-              <p>Battle Rating: {(p.battle_rating || 0).toLocaleString()}</p>
               <p>Total Events: {p.total_events_participated || 0}</p>
             </div>
+
+            {/* Medal Emoji */}
             {medalEmoji && (
               <div className="absolute top-2 right-2 text-2xl font-bold animate-zoom">
                 {medalEmoji}
@@ -355,4 +425,4 @@ function HOFSection({ hofMembers }) {
       })}
     </div>
   );
-}
+          }
