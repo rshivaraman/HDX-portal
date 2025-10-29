@@ -1,86 +1,78 @@
-// EventPlayersUI - full replacement
 'use client';
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { supabase } from '../lib/supabaseClient';
 
 export default function EventPlayersUI() {
+  // --- Hooks (always at top) ---
   const [role, setRole] = useState(null);
   const [players, setPlayers] = useState([]);
   const [events, setEvents] = useState([]);
-  const [eventPlayers, setEventPlayers] = useState([]); // raw mapping rows
-  const [joined, setJoined] = useState([]); // joined rows with player & event
+  const [eventPlayers, setEventPlayers] = useState([]);
   const [filtered, setFiltered] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [form, setForm] = useState({});
   const [editingId, setEditingId] = useState(null);
   const [loading, setLoading] = useState(true);
-
-  // modal + selection states
-  const [showModal, setShowModal] = useState(false);
-  const [modalView, setModalView] = useState('cards'); // 'cards' | 'checkbox'
-  const [modalEventId, setModalEventId] = useState(''); // event selected inside modal
-  const [modalFilter, setModalFilter] = useState('all'); // all | selected | not_selected
-  const [selectedInModal, setSelectedInModal] = useState(new Set()); // player_ids selected in modal
-  const [autoRecommendations, setAutoRecommendations] = useState([]); // top performers for quick add
-
-  // pagination
+  const [selectedEventFilter, setSelectedEventFilter] = useState('');
+  const [modalOpen, setModalOpen] = useState(false);
+  const [selectionView, setSelectionView] = useState('cards'); // 'cards' or 'checkbox'
+  const [modalFilter, setModalFilter] = useState('all'); // all, selected, notSelected
+  const [selectedPlayers, setSelectedPlayers] = useState({});
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
+	const [showPreview, setShowPreview] = useState(true);
+  // Modal's chosen event to apply selections to
+  const [modalEventId, setModalEventId] = useState('');
 
-  // refs for drag-drop (optional lightweight)
-  const dragItem = useRef();
-  const dragNode = useRef();
+  // --- Derived values ---
+  const totalPages = Math.ceil(filtered.length / itemsPerPage);
+  const paginated = filtered.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
-  // helper: set role
+  // --- Fetch user role ---
   const fetchUserRole = async () => {
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const email = session?.user?.email;
-      if (!email) return setRole('member');
-      const { data, error } = await supabase.from('players').select('role').eq('email', email).single();
-      if (error || !data) return setRole('member');
-      setRole(data.role);
-    } catch (err) {
-      console.error('role fetch error', err);
-      setRole('member');
-    }
+    const { data: { session } } = await supabase.auth.getSession();
+    const email = session?.user?.email;
+    if (!email) return setRole('member');
+    const { data, error } = await supabase.from('players').select('role').eq('email', email).single();
+    if (error || !data) return setRole('member');
+    setRole(data.role);
   };
 
-  // fetch data + join locally
+  // --- Fetch all data ---
   const fetchAll = async () => {
     setLoading(true);
     try {
-      const { data: playersData } = await supabase.from('players').select('*').order('full_name', { ascending: true });
+      const { data: playersData } = await supabase.from('players').select('*').order('full_name');
       const { data: eventsData } = await supabase.from('events').select('*').order('event_date', { ascending: false });
-      const { data: epData } = await supabase.from('event_players').select('*').order('created_at', { ascending: false });
+      const { data: epData } = await supabase.from('event_players').select('*');
+
+      const joined = (epData || []).map(ep => ({
+        ...ep,
+        player: (playersData || []).find(p => p.id === ep.player_id) || {},
+        event: (eventsData || []).find(e => e.id === ep.event_id) || {}
+      }));
 
       setPlayers(playersData || []);
       setEvents(eventsData || []);
-      setEventPlayers(epData || []);
+      setEventPlayers(joined);
+      setFiltered(joined);
 
-      // If no modalEventId selected, default to most recent event id
-      if ((!modalEventId || modalEventId === '') && eventsData && eventsData.length > 0) {
-        setModalEventId(eventsData[0].id);
+      // Default to most recent event
+      if (eventsData && eventsData.length > 0) {
+        setSelectedEventFilter(prev => prev || eventsData[0].id);
+        setModalEventId(prev => prev || eventsData[0].id);
       }
 
-      // build joined view: eventPlayers + players + events
-      const joinedView = (epData || []).map(ep => {
-        const p = (playersData || []).find(x => x.id === ep.player_id) || {};
-        const ev = (eventsData || []).find(x => x.id === ep.event_id) || {};
-        return {
-          ...ep,
-          player: p,
-          event: ev
-        };
-      });
+      // init selectedPlayers from existing mappings
+      const initialSelected = {};
+      (playersData || []).forEach(p => { initialSelected[p.id] = false; });
+      (joined || []).forEach(ep => { if (ep.player_id) initialSelected[ep.player_id] = !!ep.participation_choice; });
+      setSelectedPlayers(initialSelected);
 
-      setJoined(joinedView);
-      setFiltered(joinedView);
     } catch (err) {
       console.error('Error loading data:', err);
-    } finally {
-      setLoading(false);
     }
+    setLoading(false);
   };
 
   useEffect(() => {
@@ -88,41 +80,44 @@ export default function EventPlayersUI() {
       await fetchUserRole();
       await fetchAll();
     })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // search + page reset + event filter applied to the main table (not modal)
+  // --- Search + Event filter ---
   useEffect(() => {
-    const lower = searchTerm.toLowerCase();
-    const result = joined.filter(ep =>
-      (ep.player?.full_name || '').toLowerCase().includes(lower) ||
-      (ep.event?.name || '').toLowerCase().includes(lower) ||
-      (ep.player?.igg_id || '').toLowerCase().includes(lower)
-    );
+    const lower = (searchTerm || '').toLowerCase();
+    let result = (eventPlayers || []).slice();
+
+    if (selectedEventFilter) {
+      result = result.filter(ep => ep.event_id === selectedEventFilter);
+    }
+
+    if (lower) {
+      result = result.filter(ep =>
+        (ep.player?.full_name || '').toLowerCase().includes(lower) ||
+        (ep.event?.name || '').toLowerCase().includes(lower) ||
+        (ep.player?.igg_id || '').toLowerCase().includes(lower)
+      );
+    }
+
     setFiltered(result);
     setCurrentPage(1);
-  }, [searchTerm, joined]);
+  }, [searchTerm, eventPlayers, selectedEventFilter]);
 
-  // pagination slice
-  const totalPages = Math.ceil(filtered.length / itemsPerPage);
-  const paginated = filtered.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
-
-  // Form handlers (add/edit)
+  // --- Form handlers ---
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
     setForm(prev => ({ ...prev, [name]: type === 'checkbox' ? checked : value }));
   };
 
   const handlePlayerSelect = (e) => {
-    const selectedId = e.target.value;
-    const p = players.find(x => x.id === selectedId) || {};
+    const selectedPlayer = players.find(p => p.id === e.target.value);
     setForm(prev => ({
       ...prev,
-      player_id: selectedId,
-      might: p.might || 0,
-      battle_rating: p.battle_rating || 0,
-      kills: p.kills || 0,
-      deaths: p.deaths || 0
+      player_id: selectedPlayer?.id || '',
+      might: selectedPlayer?.might || 0,
+      battle_rating: selectedPlayer?.battle_rating || 0,
+      kills: selectedPlayer?.kills || 0,
+      deaths: selectedPlayer?.deaths || 0,
     }));
   };
 
@@ -130,15 +125,15 @@ export default function EventPlayersUI() {
     if (role !== 'admin') return;
     setEditingId(ep.id);
     setForm({
+      id: ep.id,
       event_id: ep.event_id,
       player_id: ep.player_id,
       participation_choice: !!ep.participation_choice,
-      troop_type: ep.troop_type || '',
-      specialization: ep.specialization || '',
-      top_beast_might: ep.top_beast_might || null,
-      top_hero_might: ep.top_hero_might || null
+      might: ep.player?.might || 0,
+      battle_rating: ep.player?.battle_rating || 0,
+      kills: ep.player?.kills || 0,
+      deaths: ep.player?.deaths || 0,
     });
-    // scroll into view or focus if needed
   };
 
   const handleCancel = () => {
@@ -150,30 +145,22 @@ export default function EventPlayersUI() {
     if (role !== 'admin') return alert('Not authorized');
     if (!form.event_id || !form.player_id) return alert('Select event and player');
 
-    const payload = {
+    const newData = {
       event_id: form.event_id,
       player_id: form.player_id,
-      participation_choice: !!form.participation_choice,
-      troop_type: form.troop_type || null,
-      specialization: form.specialization || null,
-      top_beast_might: form.top_beast_might ? Number(form.top_beast_might) : null,
-      top_hero_might: form.top_hero_might ? Number(form.top_hero_might) : null
+      participation_choice: !!form.participation_choice
     };
 
-    try {
-      if (editingId) {
-        const { error } = await supabase.from('event_players').update(payload).eq('id', editingId);
-        if (error) throw error;
-      } else {
-        const { error } = await supabase.from('event_players').insert([payload]);
-        if (error) throw error;
-      }
-      await fetchAll();
-      handleCancel();
-    } catch (err) {
-      console.error('Save error', err);
-      alert('Error saving: ' + (err.message || err));
-    }
+    const table = supabase.from('event_players');
+
+    const { error } = form.id
+      ? await table.update(newData).eq('id', form.id)
+      : await table.insert([newData]);
+
+    if (error) return alert('Error saving: ' + error.message);
+
+    handleCancel();
+    fetchAll();
   };
 
   const handleDelete = async (id) => {
@@ -184,196 +171,139 @@ export default function EventPlayersUI() {
     fetchAll();
   };
 
-  // --- Modal / Selection logic ---
-
-  // derive players list for modal: show all players (master) but mark selected if exist for the modalEventId
-  const playersWithSelection = players.map(p => {
-    const mapped = eventPlayers.find(ep => ep.player_id === p.id && ep.event_id === modalEventId);
-    return {
-      ...p,
-      selected: !!mapped,
-      mappingId: mapped?.id || null
-    };
-  });
-
-  // selectedInModal set manages browser-level selections (not DB) while user builds mapping
-  // initialize selectedInModal from existing mapping when opening modal
-  const openModal = (eventId = '') => {
-    const eid = eventId || modalEventId || (events[0]?.id || '');
-    setModalEventId(eid);
-
-    // initialize selected set from existing event_players rows for this event
-    const existing = new Set((eventPlayers || [])
-      .filter(ep => ep.event_id === eid)
-      .map(ep => ep.player_id));
-    setSelectedInModal(new Set(existing));
-    // build auto recommendations (top 10 by battle_rating for quick add)
-    const top = [...players].sort((a, b) => (b.battle_rating || 0) - (a.battle_rating || 0)).slice(0, 10).map(p => p.id);
-    setAutoRecommendations(top);
-    setShowModal(true);
-  };
-
-  const closeModal = () => {
-    setShowModal(false);
-    setModalFilter('all');
-    setModalView('cards');
-  };
-
-  // toggle single player's selection in modal
-  const toggleSelectInModal = (playerId) => {
-    setSelectedInModal(prev => {
-      const next = new Set(prev);
-      if (next.has(playerId)) next.delete(playerId);
-      else next.add(playerId);
-      return next;
-    });
-  };
-
-  // select/deselect all visible players in modal view (respecting modalFilter)
-  const modalVisiblePlayers = () => {
-    // players filtered by modalEventId and modalFilter
-    return playersWithSelection.filter(p => {
-      if (modalFilter === 'selected') return selectedInModal.has(p.id);
-      if (modalFilter === 'not_selected') return !selectedInModal.has(p.id);
-      return true;
-    });
-  };
-
-  const modalSelectAllVisible = () => {
-    const visible = modalVisiblePlayers();
-    setSelectedInModal(prev => {
-      const next = new Set(prev);
-      visible.forEach(p => next.add(p.id));
-      return next;
-    });
-  };
-
-  const modalDeselectAllVisible = () => {
-    const visible = modalVisiblePlayers();
-    setSelectedInModal(prev => {
-      const next = new Set(prev);
-      visible.forEach(p => next.delete(p.id));
-      return next;
-    });
-  };
-
-  // apply modal selections to DB (insert missing mappings; delete removed)
-  const modalApplyToDB = async () => {
+  // inline toggle participation in table
+  const handleInlineToggle = async (epId, current) => {
     if (role !== 'admin') return alert('Not authorized');
-    try {
-      const eid = modalEventId;
-      // current mapping player ids for this event
-      const currentSet = new Set((eventPlayers || []).filter(ep => ep.event_id === eid).map(ep => ep.player_id));
-      const toAdd = [];
-      const toRemove = [];
-      // additions: in selectedInModal but not in currentSet
-      for (const pid of selectedInModal) {
-        if (!currentSet.has(pid)) toAdd.push(pid);
-      }
-      // removals: in currentSet but not in selectedInModal
-      for (const pid of currentSet) {
-        if (!selectedInModal.has(pid)) toRemove.push(pid);
-      }
+    const { error } = await supabase.from('event_players').update({ participation_choice: !current }).eq('id', epId);
+    if (error) return alert('Error toggling: ' + error.message);
+    fetchAll();
+  };
 
-      // bulk insert new mappings
-      if (toAdd.length > 0) {
-        const inserts = toAdd.map(pid => ({
-          event_id: eid,
-          player_id: pid,
-          participation_choice: true
-        }));
-        const { error: insErr } = await supabase.from('event_players').insert(inserts);
+  // --- Modal selection handlers ---
+  const togglePlayerSelection = (playerId) => {
+    setSelectedPlayers(prev => ({ ...prev, [playerId]: !prev[playerId] }));
+  };
+
+  const selectAll = () => {
+    const updated = {};
+    players.forEach(p => { updated[p.id] = true; });
+    setSelectedPlayers(updated);
+  };
+
+  const deselectAll = () => {
+    const updated = {};
+    players.forEach(p => { updated[p.id] = false; });
+    setSelectedPlayers(updated);
+  };
+
+  // open modal and ensure modal event id is set
+  const openModal = (forEventId) => {
+    setModalEventId(forEventId || selectedEventFilter || (events[0] && events[0].id) || '');
+    setModalFilter('all');
+    setSelectionView('cards');
+    setModalOpen(true);
+  };
+
+  // --- Computed totals for modal ---
+  const modalTotals = useMemo(() => {
+    const selectedIds = Object.keys(selectedPlayers).filter(id => selectedPlayers[id]);
+    const selectedObjs = (players || []).filter(p => selectedIds.includes(p.id));
+    const totalBR = selectedObjs.reduce((sum, p) => sum + Number(p.battle_rating || 0), 0);
+    const totalMight = selectedObjs.reduce((sum, p) => sum + Number(p.might || 0), 0);
+    return { count: selectedObjs.length, totalBR, totalMight };
+  }, [selectedPlayers, players]);
+
+  // Apply modal selections to the event (insert new, remove unchecked)
+  const applySelections = async () => {
+    if (role !== 'admin') return alert('Not authorized');
+    if (!modalEventId) return alert('Choose an event to apply selections');
+
+    try {
+      // fetch existing mappings for modalEventId
+      const { data: existing = [], error: fetchErr } = await supabase
+        .from('event_players')
+        .select('*')
+        .eq('event_id', modalEventId);
+
+      if (fetchErr) throw fetchErr;
+
+      const existingByPlayer = {};
+      existing.forEach(r => { existingByPlayer[r.player_id] = r; });
+
+      // compute inserts and deletes
+      const toInsert = [];
+      const toDeleteIds = [];
+
+      // selectedPlayers map -> true means should exist
+      Object.entries(selectedPlayers).forEach(([pid, isSelected]) => {
+        const exists = !!existingByPlayer[pid];
+        if (isSelected && !exists) {
+          toInsert.push({ event_id: modalEventId, player_id: pid, participation_choice: true });
+        }
+        if (!isSelected && exists) {
+          toDeleteIds.push(existingByPlayer[pid].id);
+        }
+      });
+
+      // do batch insert
+      if (toInsert.length > 0) {
+        const { error: insErr } = await supabase.from('event_players').insert(toInsert);
         if (insErr) throw insErr;
       }
 
-      // delete removals
-      if (toRemove.length > 0) {
-        const { error: delErr } = await supabase.from('event_players').delete().in('player_id', toRemove).eq('event_id', eid);
+      // do batch delete
+      if (toDeleteIds.length > 0) {
+        const { error: delErr } = await supabase.from('event_players').delete().in('id', toDeleteIds);
         if (delErr) throw delErr;
       }
 
-      await fetchAll(); // refresh everything
-      closeModal();
+      // refresh and close
+      await fetchAll();
+      setModalOpen(false);
     } catch (err) {
-      console.error('modal apply error', err);
-      alert('Error applying selections: ' + (err.message || err));
+      console.error('Error applying selections:', err);
+      alert('Error applying selections: ' + err.message);
     }
   };
 
-  // quick toggle for recommended list (adds/removes playerIds to selected set)
-  const toggleRecommendation = (pid) => {
-    toggleSelectInModal(pid);
-  };
+  // Helper: list of players shown in modal based on modalFilter
+  const modalPlayerList = useMemo(() => {
+    const list = (players || []).map(p => ({
+      ...p,
+      selected: !!selectedPlayers[p.id]
+    }));
+    if (modalFilter === 'selected') return list.filter(p => p.selected);
+    if (modalFilter === 'notSelected') return list.filter(p => !p.selected);
+    return list;
+  }, [players, selectedPlayers, modalFilter]);
 
-  // compute banner totals for currently filtered main table (sums battle_rating & might)
-  const bannerTotalsForFiltered = (() => {
-    const list = filtered;
-    const br = list.reduce((s, ep) => s + Number(ep.player?.battle_rating || 0), 0);
-    const might = list.reduce((s, ep) => s + Number(ep.player?.might || 0), 0);
-    return { br, might, count: list.length };
-  })();
+  // totals aggregated for currently visible filtered table (selected event totals)
+  const tableTotals = useMemo(() => {
+    const arr = filtered || [];
+    const totalBR = arr.reduce((s, ep) => s + Number(ep.player?.battle_rating || 0), 0);
+    const totalMight = arr.reduce((s, ep) => s + Number(ep.player?.might || 0), 0);
+    return { totalBR, totalMight };
+  }, [filtered]);
 
-  // compute modal selection totals (battle_rating & might) for selected players in modal
-  const modalSelectionTotals = (() => {
-    let br = 0, might = 0;
-    for (const pid of selectedInModal) {
-      const p = players.find(x => x.id === pid);
-      if (p) {
-        br += Number(p.battle_rating || 0);
-        might += Number(p.might || 0);
-      }
-    }
-    return { br, might, count: selectedInModal.size };
-  })();
-
-  // --- Simple drag/drop handlers for card re-order inside modal selected area (purely client-side) ---
-  const handleDragStart = (e, params) => {
-    dragItem.current = params;
-    dragNode.current = e.target;
-    e.dataTransfer.effectAllowed = 'move';
-    e.dataTransfer.setData('text/plain', params.playerId);
-    // add a tiny timeout to allow CSS class changes if needed
-    setTimeout(() => {
-      // optional: add dragging class
-    }, 0);
-  };
-
-  const handleDragEnter = (e, params) => {
-    const draggedItem = dragItem.current;
-    if (!draggedItem || draggedItem.playerId === params.playerId) return;
-    // no persistent reorder needed — just visual. Implement if you want reorder saved in state.
-  };
-
-  const handleDragEnd = () => {
-    dragItem.current = null;
-    dragNode.current = null;
-  };
-
-  // small util for number display
-  const fmt = (n) => (Number(n || 0)).toLocaleString();
-
-  // Loading state
-  if (loading) return <div className="flex justify-center items-center h-screen text-white text-lg">Loading...</div>;
+  if (loading)
+    return <div className="flex justify-center items-center h-screen text-white text-lg">Loading...</div>;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-black to-gray-800 text-white py-8 px-4">
-      <div className="max-w-7xl mx-auto bg-white/5 p-6 rounded-2xl shadow-2xl border border-white/10">
+    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-black to-gray-800 text-white py-10 px-4">
+      <div className="max-w-7xl mx-auto bg-white/10 p-6 rounded-2xl shadow-2xl border border-white/20">
         <h2 className="text-3xl font-bold mb-6 text-center bg-gradient-to-r from-blue-400 to-purple-500 bg-clip-text text-transparent">
           ⚔️ Event Player Mapping Dashboard
         </h2>
 
-        {/* Filters & Search */}
-        <div className="flex flex-col md:flex-row gap-4 justify-between items-start md:items-center mb-6">
-          <div className="flex gap-3 w-full md:w-3/4">
+        {/* Filters */}
+        <div className="flex flex-col md:flex-row justify-between items-center gap-4 mb-6">
+          <div className="flex flex-col md:flex-row gap-3 w-full md:w-3/4">
             <select
-              value={modalEventId || ''}
-              onChange={(e) => {
-                setModalEventId(e.target.value);
-                // optionally refresh modal default selection when event changed
-              }}
-              className="w-1/2 md:w-1/4 p-3 rounded-lg bg-gray-900 border border-gray-700 text-white"
+              value={selectedEventFilter}
+              onChange={(e) => setSelectedEventFilter(e.target.value)}
+              className="w-full md:w-1/3 p-3 rounded-lg bg-gray-900 border border-gray-600 text-white"
             >
-              <option value="">📅 Select Event</option>
+              <option value="">📅 All Events</option>
               {events.map(ev => (
                 <option key={ev.id} value={ev.id}>
                   {ev.name} ({ev.event_date?.substring(0,10)})
@@ -383,33 +313,61 @@ export default function EventPlayersUI() {
 
             <input
               type="text"
-              placeholder="🔍 Search by player or event..."
+              placeholder="🔍 Search by player, event or IGG..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="flex-1 p-3 rounded-lg bg-gray-900 border border-gray-700 text-white"
+              className="w-full md:w-2/3 p-3 rounded-lg bg-gray-900 border border-gray-600 text-white"
             />
-
-            <button
-              onClick={() => openModal(modalEventId)}
-              className="bg-indigo-600 hover:bg-indigo-700 px-4 py-2 rounded-lg shadow-md"
-            >
-              Open Selection
-            </button>
           </div>
 
-          <div className="text-sm text-gray-300">
+          <div className="text-sm text-gray-400">
             Showing <strong>{filtered.length}</strong> records | Page {currentPage}/{totalPages || 1}
           </div>
         </div>
 
-        {/* Totals banner (responsive) */}
-        <div className="mb-6 text-center text-white py-3 rounded-lg bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 shadow-lg border border-white/10 grid grid-cols-1 md:grid-cols-3 gap-2 items-center">
-          <div className="text-sm">Selected Event: <strong>{events.find(e=>e.id===modalEventId)?.name || 'All Events'}</strong></div>
-          <div className="text-sm">Count: <strong>{bannerTotalsForFiltered.count}</strong></div>
-          <div className="text-sm">Battle Rating: <strong>{fmt(bannerTotalsForFiltered.br)}</strong> | Might: <strong>{fmt(bannerTotalsForFiltered.might)}</strong></div>
+        {/* Totals */}
+        <div className="mb-6 text-center text-white py-3 rounded-lg bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 shadow-lg border border-white/20">
+          {selectedEventFilter ? (
+            <>
+              <strong>{events.find(e => e.id === selectedEventFilter)?.name} Totals:</strong>{' '}
+              Battle Rating: {tableTotals.totalBR.toLocaleString()} | Might: {tableTotals.totalMight.toLocaleString()}
+            </>
+          ) : (
+            <>
+              <strong>All Events Combined (visible):</strong> Battle Rating: {tableTotals.totalBR.toLocaleString()} | Might: {tableTotals.totalMight.toLocaleString()}
+            </>
+          )}
         </div>
 
-        {/* Admin form (add / edit mapping) */}
+        {/* Controls: open selection modal */}
+        <div className="flex gap-3 mb-6 flex-wrap">
+          <button
+            onClick={() => openModal(selectedEventFilter)}
+            className="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg font-medium shadow-md"
+          >
+            ⚡ Bulk Select / Map Players
+          </button>
+
+          <button
+            onClick={() => { selectAll(); }}
+            className="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded-lg font-medium"
+          >
+            Select All (local)
+          </button>
+
+          <button
+            onClick={() => { deselectAll(); }}
+            className="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded-lg font-medium"
+          >
+            Deselect All (local)
+          </button>
+
+          <div className="ml-auto text-sm text-gray-300">
+            {modalTotals.count} selected — BR: {modalTotals.totalBR.toLocaleString()} | Might: {modalTotals.totalMight.toLocaleString()}
+          </div>
+        </div>
+
+        {/* Admin inline add/edit form */}
         {role === 'admin' && (
           <div className="bg-black/50 border border-gray-700 p-6 rounded-xl mb-8">
             <h3 className="text-xl font-semibold mb-4 text-blue-400">
@@ -437,7 +395,7 @@ export default function EventPlayersUI() {
                   <option value="">Select Player</option>
                   {players.map(p => (
                     <option key={p.id} value={p.id}>
-                      {p.full_name} (IGG: {p.igg_id})
+                      {p.full_name} (IGG: {p.igg_id || '—'})
                     </option>
                   ))}
                 </select>
@@ -460,7 +418,7 @@ export default function EventPlayersUI() {
                 ].map((stat) => (
                   <div key={stat.label} className="bg-gradient-to-br from-gray-800 to-gray-900 border border-gray-700 p-4 rounded-xl text-center shadow-md">
                     <div className="text-sm text-gray-400">{stat.label}</div>
-                    <div className="text-xl font-semibold text-blue-400 mt-1">{(stat.value ?? 0).toLocaleString()}</div>
+                    <div className="text-xl font-semibold text-blue-400 mt-1">{(stat.value || 0).toLocaleString()}</div>
                   </div>
                 ))}
               </div>
@@ -486,6 +444,7 @@ export default function EventPlayersUI() {
               <tr>
                 <th className="px-4 py-2">Event</th>
                 <th className="px-4 py-2">Player</th>
+                <th className="px-4 py-2">IGG</th>
                 <th className="px-4 py-2">Battle Rating</th>
                 <th className="px-4 py-2">Might</th>
                 <th className="px-4 py-2">Kills</th>
@@ -496,26 +455,36 @@ export default function EventPlayersUI() {
             </thead>
             <tbody>
               {paginated.length === 0 ? (
-                <tr><td colSpan={8} className="text-center py-6 text-gray-400 italic">No records found.</td></tr>
+                <tr><td colSpan={9} className="text-center py-6 text-gray-400 italic">No records found.</td></tr>
               ) : (
                 paginated.map(ep => (
                   <tr key={ep.id} className="hover:bg-gray-800 border-t border-gray-700">
                     <td className="px-4 py-2">{ep.event?.name || '—'}</td>
                     <td className="px-4 py-2 flex items-center gap-3">
-                      <img src={ep.player?.profile_image_url || '/default.png'} alt={ep.player?.full_name} className="w-8 h-8 rounded-full border border-gray-700"/>
+                      <img src={ep.player?.profile_image_url || '/default.png'} alt={ep.player?.full_name} className="w-8 h-8 rounded-full" />
                       <div>
                         <div>{ep.player?.full_name || '—'}</div>
-                        <div className="text-xs text-gray-400">IGG: {ep.player?.igg_id || '—'}</div>
+                        <div className="text-xs text-gray-400">{ep.player?.role || ''}</div>
                       </div>
                     </td>
-                    <td className="px-4 py-2">{fmt(ep.player?.battle_rating)}</td>
-                    <td className="px-4 py-2">{fmt(ep.player?.might)}</td>
-                    <td className="px-4 py-2">{fmt(ep.player?.kills)}</td>
-                    <td className="px-4 py-2">{fmt(ep.player?.deaths)}</td>
-                    <td className="px-4 py-2">{ep.participation_choice ? '✅' : '❌'}</td>
+                    <td className="px-4 py-2">{ep.player?.igg_id || '—'}</td>
+                    <td className="px-4 py-2">{Number(ep.player?.battle_rating || 0).toLocaleString()}</td>
+                    <td className="px-4 py-2">{Number(ep.player?.might || 0).toLocaleString()}</td>
+                    <td className="px-4 py-2">{ep.player?.kills ?? 0}</td>
+                    <td className="px-4 py-2">{ep.player?.deaths ?? 0}</td>
+                    <td className="px-4 py-2">
+                      {role === 'admin' ? (
+                        <button
+                          onClick={() => handleInlineToggle(ep.id, !!ep.participation_choice)}
+                          className={`px-2 py-1 rounded ${ep.participation_choice ? 'bg-green-500 text-black' : 'bg-gray-700 text-gray-200'}`}
+                        >
+                          {ep.participation_choice ? '✅' : '❌'}
+                        </button>
+                      ) : (ep.participation_choice ? '✅' : '❌')}
+                    </td>
                     {role === 'admin' && (
                       <td className="px-4 py-2 flex justify-center gap-2">
-                        <button onClick={() => handleEdit(ep)} className="bg-yellow-500 text-black px-3 py-1 rounded hover:bg-yellow-400">Edit</button>
+                        <button onClick={() => { handleEdit(ep); }} className="bg-yellow-500 text-black px-3 py-1 rounded hover:bg-yellow-400">Edit</button>
                         <button onClick={() => handleDelete(ep.id)} className="bg-red-600 text-white px-3 py-1 rounded hover:bg-red-700">Delete</button>
                       </td>
                     )}
@@ -526,7 +495,7 @@ export default function EventPlayersUI() {
           </table>
         </div>
 
-        {/* Pagination */}
+        {/* Pagination Controls */}
         <div className="flex justify-center items-center gap-4 mt-6">
           <button
             disabled={currentPage === 1}
@@ -544,137 +513,170 @@ export default function EventPlayersUI() {
         </div>
       </div>
 
-      {/* ---------------- Modal ---------------- */}
-      {showModal && (
-        <div className="fixed inset-0 z-50 flex items-start justify-center p-4 md:p-8">
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={closeModal}></div>
-          <div className="relative w-full max-w-5xl bg-gray-900 border border-gray-700 rounded-2xl shadow-2xl overflow-hidden">
-            <div className="p-4 md:p-6 flex flex-col md:flex-row gap-4">
-              <div className="flex-1">
-                <div className="flex items-center justify-between gap-3 mb-3">
-                  <div className="flex items-center gap-2">
-                    <h3 className="text-lg font-semibold">Select Players for</h3>
-                    <div className="text-sm text-gray-400">{events.find(ev => ev.id === modalEventId)?.name || '—'}</div>
-                  </div>
+      {/* --------------------- Modal --------------------- */}
+      {modalOpen && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-start justify-center p-4 sm:p-8 overflow-auto">
+          <div className="w-full max-w-5xl bg-gray-900 rounded-2xl p-6 border border-gray-700 shadow-2xl">
+            <div className="flex items-start gap-4">
+              <h3 className="text-xl font-semibold text-white">Bulk Player Selection</h3>
+              <div className="ml-auto flex gap-2">
+                <select value={modalEventId} onChange={(e) => setModalEventId(e.target.value)} className="bg-gray-800 p-2 rounded">
+                  <option value="">Select Event</option>
+                  {events.map(ev => <option key={ev.id} value={ev.id}>{ev.name} ({ev.event_date?.substring(0,10)})</option>)}
+                </select>
+                <button onClick={() => { setSelectionView('cards'); }} className={`px-2 py-1 rounded ${selectionView === 'cards' ? 'bg-blue-600' : 'bg-gray-700'}`}>Cards</button>
+                <button onClick={() => { setSelectionView('checkbox'); }} className={`px-2 py-1 rounded ${selectionView === 'checkbox' ? 'bg-blue-600' : 'bg-gray-700'}`}>List</button>
+                <button onClick={() => setModalOpen(false)} className="bg-red-600 px-3 py-1 rounded ml-2">Close</button>
+              </div>
+            </div>
 
-                  <div className="flex items-center gap-2">
-                    <select value={modalEventId} onChange={e => setModalEventId(e.target.value)} className="p-2 bg-gray-800 border border-gray-700 rounded">
-                      {events.map(ev => <option key={ev.id} value={ev.id}>{ev.name} ({ev.event_date?.substring(0,10)})</option>)}
-                    </select>
-
-                    <select value={modalFilter} onChange={e => setModalFilter(e.target.value)} className="p-2 bg-gray-800 border border-gray-700 rounded">
-                      <option value="all">All</option>
-                      <option value="selected">Selected</option>
-                      <option value="not_selected">Not selected</option>
-                    </select>
-
-                    <div className="flex items-center gap-2">
-                      <button onClick={() => setModalView('cards')} className={`px-3 py-1 rounded ${modalView==='cards' ? 'bg-indigo-600' : 'bg-gray-800'}`}>Cards</button>
-                      <button onClick={() => setModalView('checkbox')} className={`px-3 py-1 rounded ${modalView==='checkbox' ? 'bg-indigo-600' : 'bg-gray-800'}`}>Checkbox</button>
-                    </div>
-
-                    <button onClick={modalSelectAllVisible} className="bg-green-600 px-3 py-1 rounded">Select All</button>
-                    <button onClick={modalDeselectAllVisible} className="bg-red-600 px-3 py-1 rounded">Deselect</button>
-                    <button onClick={() => {
-                      // quick toggle recommended: add all recommendations to selection
-                      setSelectedInModal(prev => {
-                        const next = new Set(prev);
-                        autoRecommendations.forEach(id => next.add(id));
-                        return next;
-                      });
-                    }} className="bg-yellow-500 text-black px-3 py-1 rounded">Auto Add Top</button>
-                  </div>
-                </div>
-
-                {/* modal selection header banner */}
-                <div className="mb-4 p-3 rounded-lg bg-gradient-to-r from-indigo-600 to-purple-600 text-white text-sm flex flex-col md:flex-row gap-2 justify-between items-center">
-                  <div>Selected: <strong>{modalSelectionTotals.count}</strong></div>
-                  <div>Battle Rating: <strong>{fmt(modalSelectionTotals.br)}</strong></div>
-                  <div>Might: <strong>{fmt(modalSelectionTotals.might)}</strong></div>
-                </div>
-
-                {/* Players grid / list */}
-                <div className="max-h-[60vh] overflow-auto pr-2">
-                  {modalView === 'cards' ? (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
-                      {modalVisiblePlayers().map(p => {
-                        const isSelected = selectedInModal.has(p.id);
-                        return (
-                          <div key={p.id}
-                               draggable
-                               onDragStart={(e) => handleDragStart(e, { playerId: p.id })}
-                               onDragEnter={(e) => handleDragEnter(e, { playerId: p.id })}
-                               onDragEnd={handleDragEnd}
-                               className={`p-3 rounded-xl border ${isSelected ? 'border-indigo-500 bg-gray-800/60' : 'border-gray-700 bg-gray-800/30'} flex gap-3 items-center`}>
-                            <img src={p.profile_image_url || '/default.png'} alt={p.full_name} className="w-12 h-12 rounded-full border border-gray-700"/>
-                            <div className="flex-1">
-                              <div className="font-semibold">{p.full_name}</div>
-                              <div className="text-xs text-gray-400">IGG: {p.igg_id || '—'}</div>
-                              <div className="text-xs text-gray-300">BR: {fmt(p.battle_rating)} • Might: {fmt(p.might)}</div>
-                            </div>
-                            <div className="flex flex-col gap-2 items-end">
-                              <button onClick={() => toggleSelectInModal(p.id)} className={`px-3 py-1 rounded ${isSelected ? 'bg-red-600' : 'bg-green-600'}`}>
-                                {isSelected ? 'Remove' : 'Add'}
-                              </button>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  ) : (
-                    // checkbox view
-                    <div className="space-y-2">
-                      {modalVisiblePlayers().map(p => {
-                        const isSelected = selectedInModal.has(p.id);
-                        return (
-                          <label key={p.id} className="flex items-center gap-3 p-2 rounded border border-gray-700">
-                            <input type="checkbox" checked={isSelected} onChange={() => toggleSelectInModal(p.id)} className="w-4 h-4" />
-                            <img src={p.profile_image_url || '/default.png'} alt={p.full_name} className="w-10 h-10 rounded-full border border-gray-700"/>
-                            <div className="flex-1">
-                              <div className="font-semibold">{p.full_name}</div>
-                              <div className="text-xs text-gray-400">IGG: {p.igg_id || '—'}</div>
-                            </div>
-                            <div className="text-sm text-gray-300">BR: {fmt(p.battle_rating)}</div>
-                          </label>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
+            {/* modal controls */}
+            <div className="flex items-center gap-3 mt-4 flex-wrap">
+              <div className="flex gap-2">
+                <button onClick={selectAll} className="bg-green-600 px-3 py-1 rounded">Select All</button>
+                <button onClick={deselectAll} className="bg-gray-700 px-3 py-1 rounded">Deselect All</button>
               </div>
 
-              {/* Right panel: preview of selected players & actions */}
-              <div className="w-full md:w-80 bg-gray-800/30 p-3 rounded-lg border border-gray-700">
-                <div className="mb-3 flex items-center justify-between">
-                  <h4 className="font-semibold">Selected Preview</h4>
-                  <div className="text-xs text-gray-400">{modalSelectionTotals.count} players</div>
-                </div>
+              <div className="flex items-center gap-2 ml-4">
+                <label className="text-sm text-gray-300">Filter</label>
+                <select value={modalFilter} onChange={e => setModalFilter(e.target.value)} className="bg-gray-800 p-2 rounded">
+                  <option value="all">All</option>
+                  <option value="selected">Selected</option>
+                  <option value="notSelected">Not Selected</option>
+                </select>
+              </div>
 
-                <div className="space-y-2 max-h-72 overflow-auto">
-                  {[...selectedInModal].map(pid => {
-                    const p = players.find(x => x.id === pid);
-                    if (!p) return null;
-                    return (
-                      <div key={pid} className="flex items-center gap-3 p-2 border border-gray-700 rounded">
-                        <img src={p.profile_image_url || '/default.png'} alt={p.full_name} className="w-10 h-10 rounded-full border border-gray-700"/>
+              <div className="ml-auto text-sm text-gray-300">
+                Selected: <strong>{modalTotals.count}</strong> — BR: <strong>{modalTotals.totalBR.toLocaleString()}</strong> | Might: <strong>{modalTotals.totalMight.toLocaleString()}</strong>
+              </div>
+            </div>
+
+            {/* modal content */}
+            <div className="mt-4">
+
+              {/* Selected Players Preview */}
+              {Object.values(selectedPlayers).some(Boolean) && (
+                <div className="bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 p-3 rounded-xl text-white shadow-md mb-4">
+                  <div className="flex justify-between items-center">
+                    <h3 className="text-lg font-semibold">
+                      Selected Players ({Object.values(selectedPlayers).filter(Boolean).length})
+                    </h3>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => setShowPreview(!showPreview)}
+                        className="bg-white/20 hover:bg-white/30 text-xs px-3 py-1 rounded-full transition"
+                      >
+                        {showPreview ? 'Hide Preview' : 'Show Preview'}
+                      </button>
+                      <button
+                        onClick={() => deselectAll()}
+                        className="bg-white/20 hover:bg-white/30 text-xs px-3 py-1 rounded-full transition"
+                      >
+                        Clear All
+                      </button>
+                    </div>
+                  </div>
+
+                  {showPreview && (
+                    <>
+                      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2 mt-3">
+                        {players
+                          .filter(p => selectedPlayers[p.id])
+                          .map(p => (
+                            <div
+                              key={p.id}
+                              className="flex items-center gap-2 bg-white/10 hover:bg-white/20 rounded-lg p-2 transition"
+                            >
+                              <img
+                                src={p.profile_image_url || '/default.png'}
+                                alt={p.full_name}
+                                className="w-8 h-8 rounded-full border-2 border-white"
+                              />
+                              <div className="flex flex-col text-xs">
+                                <span className="font-semibold">{p.full_name}</span>
+                                <span className="opacity-80">
+                                  BR: {(p.battle_rating || 0).toLocaleString()}
+                                </span>
+                              </div>
+                            </div>
+                          ))}
+                      </div>
+
+                      <div className="mt-3 flex flex-wrap gap-3 justify-between text-sm font-medium">
+                        <span>
+                          Total Might:{' '}
+                          {players
+                            .filter(p => selectedPlayers[p.id])
+                            .reduce((sum, p) => sum + (p.might || 0), 0)
+                            .toLocaleString()}
+                        </span>
+                        <span>
+                          Total BR:{' '}
+                          {players
+                            .filter(p => selectedPlayers[p.id])
+                            .reduce((sum, p) => sum + (p.battle_rating || 0), 0)
+                            .toLocaleString()}
+                        </span>
+                        <span>
+                          Total Deaths:{' '}
+                          {players
+                            .filter(p => selectedPlayers[p.id])
+                            .reduce((sum, p) => sum + (p.deaths || 0), 0)
+                            .toLocaleString()}
+                        </span>
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+              
+              {selectionView === 'cards' ? (
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+
+                  
+                  {modalPlayerList.map(p => (
+                    <div key={p.id} className={`p-3 rounded-lg border ${p.selected ? 'border-blue-400 bg-gray-800' : 'border-gray-700 bg-gray-900'}`}>
+                      <div className="flex items-center gap-3">
+                        <img src={p.profile_image_url || '/default.png'} alt={p.full_name} className="w-12 h-12 rounded-full" />
                         <div className="flex-1">
                           <div className="font-semibold">{p.full_name}</div>
                           <div className="text-xs text-gray-400">IGG: {p.igg_id || '—'}</div>
+                          <div className="text-xs text-gray-300">BR: {(p.battle_rating||0).toLocaleString()} • Might: {(p.might||0).toLocaleString()}</div>
                         </div>
-                        <div className="text-xs text-gray-300 text-right">
-                          <div>BR: {fmt(p.battle_rating)}</div>
-                          <div>M: {fmt(p.might)}</div>
+                        <div>
+                          <input type="checkbox" checked={!!p.selected} onChange={() => togglePlayerSelection(p.id)} />
                         </div>
                       </div>
-                    );
-                  })}
+                    </div>
+                  ))}
                 </div>
+              ) : (
+                <div className="space-y-2">
+                  {(modalPlayerList || []).map(p => (
+                    <div key={p.id} className="flex items-center justify-between p-2 rounded bg-gray-900 border border-gray-700">
+                      <div className="flex items-center gap-3">
+                        <img src={p.profile_image_url || '/default.png'} alt={p.full_name} className="w-10 h-10 rounded-full" />
+                        <div>
+                          <div className="font-semibold">{p.full_name}</div>
+                          <div className="text-xs text-gray-400">IGG: {p.igg_id || '—'}</div>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-4">
+                        <div className="text-sm text-gray-300">BR: {(p.battle_rating||0).toLocaleString()}</div>
+                        <div><input type="checkbox" checked={!!p.selected} onChange={() => togglePlayerSelection(p.id)} /></div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
 
-                <div className="mt-4 flex gap-2">
-                  <button onClick={modalApplyToDB} className="flex-1 bg-indigo-600 hover:bg-indigo-700 px-3 py-2 rounded">Save to Event</button>
-                  <button onClick={closeModal} className="flex-1 bg-gray-600 hover:bg-gray-700 px-3 py-2 rounded">Close</button>
-                </div>
-              </div>
+
+            
+            {/* modal footer */}
+            <div className="mt-6 flex justify-end gap-3">
+              <button onClick={() => setModalOpen(false)} className="bg-gray-600 px-4 py-2 rounded">Cancel</button>
+              <button onClick={applySelections} className="bg-blue-600 px-4 py-2 rounded">Apply Selections</button>
             </div>
           </div>
         </div>
