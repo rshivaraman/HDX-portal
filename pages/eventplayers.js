@@ -196,14 +196,45 @@ export default function EventPlayersUI() {
     setSelectedPlayers(updated);
   };
 
-  // open modal and ensure modal event id is set
-  const openModal = (forEventId) => {
-    setModalEventId(forEventId || selectedEventFilter || (events[0] && events[0].id) || '');
-    setModalFilter('all');
-    setSelectionView('cards');
-    setModalOpen(true);
-  };
+const refreshSelectedPlayersForEvent = async (eventId) => {
+  try {
+    const { data: existing } = await supabase
+      .from('event_players')
+      .select('player_id, participation_choice')
+      .eq('event_id', eventId);
 
+    const updatedMap = {};
+    (players || []).forEach(p => {
+      const found = (existing || []).find(e => e.player_id === p.id);
+      updatedMap[p.id] = !!found?.participation_choice;
+    });
+
+    setSelectedPlayers(updatedMap);
+  } catch (err) {
+    console.error('Error refreshing player selections:', err);
+  }
+};
+  
+  // open modal and ensure modal event id is set
+  const openModal = async (forEventId) => {
+  const targetEventId =
+    forEventId || selectedEventFilter || (events[0] && events[0].id) || '';
+
+  setModalEventId(targetEventId);
+  setModalFilter('all');
+  setSelectionView('cards');
+
+  // Refresh selections before opening modal
+  await refreshSelectedPlayersForEvent(targetEventId);
+
+  setModalOpen(true);
+};
+// Whenever modalEventId changes, refresh selectedPlayers
+useEffect(() => {
+  if (!modalEventId) return;
+  refreshSelectedPlayersForEvent(modalEventId);
+}, [modalEventId]);
+  
   // --- Computed totals for modal ---
   const modalTotals = useMemo(() => {
     const selectedIds = Object.keys(selectedPlayers).filter(id => selectedPlayers[id]);
@@ -217,7 +248,7 @@ export default function EventPlayersUI() {
   const applySelections = async () => {
     if (role !== 'admin') return alert('Not authorized');
     if (!modalEventId) return alert('Choose an event to apply selections');
-
+		await refreshSelectedPlayersForEvent(modalEventId);
     try {
       // fetch existing mappings for modalEventId
       const { data: existing = [], error: fetchErr } = await supabase
