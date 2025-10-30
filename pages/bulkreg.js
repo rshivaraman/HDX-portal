@@ -546,8 +546,17 @@ export default function BulkRegPage() {
               <div className="flex-1">
                 <h2 className="text-xl font-semibold mb-2">Bulk Add Player Profiles (CSV)</h2>
                 <p className="text-sm text-gray-300 mb-3">Upload CSV (header row required). The upload supports IGG ID via column <code className="bg-gray-800 px-1 py-0.5 rounded">igg_id</code>.</p>
+             
+          <div className="bg-gray-900 rounded p-3 overflow-x-auto max-w-full">
+  <pre className="text-xs text-gray-200 whitespace-pre min-w-max">
+full_name,email,country,troop_type,rank_name,might,battle_rating,top_beast_type,top_beast_might,top_hero_type,top_hero_name,top_hero_might,player_specialist_parent,player_specialist_child,igg_id,can_login
+  </pre>
+</div>
+              </div>
+
               <div className="flex flex-col gap-3 w-full md:w-auto">
                 <input type="file" accept=".csv" onChange={onCsvFileChange} className="bg-gray-800 p-2 rounded" />
+          
                 <button
                   onClick={() => {
                     const sample = `full_name,email,country,troop_type,rank_name,might,battle_rating,top_beast_type,top_beast_might,top_hero_type,top_hero_name,top_hero_might,player_specialist_parent,player_specialist_child,igg_id,can_login
