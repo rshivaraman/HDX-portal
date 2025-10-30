@@ -547,9 +547,11 @@ export default function BulkRegPage() {
                 <h2 className="text-xl font-semibold mb-2">Bulk Add Player Profiles (CSV)</h2>
                 <p className="text-sm text-gray-300 mb-3">Upload CSV (header row required). The upload supports IGG ID via column <code className="bg-gray-800 px-1 py-0.5 rounded">igg_id</code>.</p>
                 <div className="text-xs text-gray-400 mb-2">Expected headers:</div>
-                <pre className="bg-gray-900 p-3 rounded text-xs overflow-auto text-gray-200">
-full_name,email,country,troop_type,rank_name,might,battle_rating,top_beast_type,top_beast_might,top_hero_type,top_hero_name,top_hero_might,player_specialist_parent,player_specialist_child,igg_id,can_login
-                </pre>
+                <div className="bg-gray-900 rounded overflow-x-auto p-3">
+  <pre className="text-xs text-gray-200 whitespace-pre">
+    full_name,email,country,troop_type,rank_name,might,battle_rating,top_beast_type,top_beast_might,top_hero_type,top_hero_name,top_hero_might,player_specialist_parent,player_specialist_child,igg_id,can_login
+  </pre>
+</div>
               </div>
 
               <div className="flex flex-col gap-3 w-full md:w-auto">
