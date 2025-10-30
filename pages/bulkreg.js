@@ -1,26 +1,32 @@
-// pages/bulkreg.js
 'use client';
 
 import React, { useEffect, useState, useMemo } from 'react';
 import { createClient } from '@supabase/supabase-js';
 
+/*
+  NOTE (SECURITY)
+  You asked to hardcode keys in a single page. This is insecure for production.
+  Anyone with access to the client bundle can see the SERVICE key and control
+  your Supabase project. Strongly consider replacing client-side service-key
+  usage with secure Next.js API routes and the service key stored server-side.
+*/
+
 // -----------------------------
-// Replace / keep these keys (you asked to keep hard-coded).
-// Make sure you understand these keys are sensitive when using service keys.
+// Put your keys here (hard-coded as requested)
 // -----------------------------
 const NEXT_PUBLIC_SUPABASE_URL = 'https://cdlwqgzvbrobhhtvmgum.supabase.co';
-const NEXT_PUBLIC_SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNkbHdxZ3p2YnJvYmhodHZtZ3VtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTk5MTM1NTAsImV4cCI6MjA3NTQ4OTU1MH0.xn_kKObDscmi0KSA9-Hr2YHlHCmHYy6fUtVk8lNqLEY';
+const NEXT_PUBLIC_SUPABASE_ANON_KEY =
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNkbHdxZ3p2YnJvYmhodHZtZ3VtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTk5MTM1NTAsImV4cCI6MjA3NTQ4OTU1MH0.xn_kKObDscmi0KSA9-Hr2YHlHCmHYy6fUtVk8lNqLEY';
 
-// If you want server-level admin actions (not used here), you'd include service key separate.
-// const SUPABASE_SERVICE_KEY = '...';
+// SERVICE KEY: same project (higher privileges). YOU REQUESTED HARDCODING.
+const SUPABASE_SERVICE_KEY =
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNkbHdxZ3p2YnJvYmhodHZtZ3VtIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1OTkxMzU1MCwiZXhwIjoyMDc1NDg5NTUwfQ.Pfw74Yr95LLUDFsSPuxem_y4GYtKj8MAxzs1n9FvXWQ';
 
-// Primary client (anon) — used for CRUD on players and audit_logs by signed-in admin.
-// This assumes your Supabase Row Level Security allows the admin's session to act on these tables.
-const supabase = createClient(NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY);
+// Create a Supabase client that uses the SERVICE KEY (powerful) so we can access admin APIs.
+// WARNING: this will expose the service key to any client that loads the page — insecure.
+const supabase = createClient(NEXT_PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_KEY);
 
-// -----------------------------
-// Simple UUID generator used for batch ids (no dependency).
-// -----------------------------
+// simple uuid generator for batch ids
 const uuidv4 = () =>
   'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
     const r = (Math.random() * 16) | 0;
@@ -28,89 +34,99 @@ const uuidv4 = () =>
     return v.toString(16);
   });
 
-// -----------------------------
-// Main component
-// -----------------------------
 export default function BulkRegPage() {
-  // role: null = still loading, 'admin' | 'member'
+  // role: null = loading, 'admin'|'member'
   const [role, setRole] = useState(null);
 
-  // UI section toggle (bulk vs grant)
-  const [section, setSection] = useState('bulk'); // 'bulk' or 'grant'
+  // UI section: 'bulk' or 'grant'
+  const [section, setSection] = useState('bulk');
 
-  // --- Bulk upload state ---
-  const [csvData, setCsvData] = useState([]); // parsed rows
-  const [uploadResults, setUploadResults] = useState([]); // [{row, status:'success'|'fail', message}]
+  // bulk upload state
+  const [csvData, setCsvData] = useState([]);
+  const [uploadResults, setUploadResults] = useState([]); // { row, status, message }
   const [loadingUpload, setLoadingUpload] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [lastBatchId, setLastBatchId] = useState(null);
 
-  // --- Grant access state ---
-  const [unmappedPlayers, setUnmappedPlayers] = useState([]); // players with can_login = false
-  const [grantSelection, setGrantSelection] = useState({}); // id -> boolean
+  // grant access
+  const [unmappedPlayers, setUnmappedPlayers] = useState([]); // players with can_login false
+  const [grantSelection, setGrantSelection] = useState({}); // id => boolean
   const [loadingGrant, setLoadingGrant] = useState(false);
 
-  // --- UI + logs ---
-  const [toast, setToast] = useState(null);
+  // audit entries (limited to the current batch or last 200)
+  const [auditEntries, setAuditEntries] = useState([]);
+  const [auditLoading, setAuditLoading] = useState(false);
   const [showBulkAudit, setShowBulkAudit] = useState(false);
   const [showGrantAudit, setShowGrantAudit] = useState(false);
-  const [auditEntries, setAuditEntries] = useState([]); // entries for current batch/action
-  const [auditLoading, setAuditLoading] = useState(false);
-  const [filterAuditDateFrom, setFilterAuditDateFrom] = useState('');
-  const [filterAuditDateTo, setFilterAuditDateTo] = useState('');
+  const [filterAuditFrom, setFilterAuditFrom] = useState('');
+  const [filterAuditTo, setFilterAuditTo] = useState('');
 
-  // small helper toast
+  // UI
+  const [toast, setToast] = useState(null);
   const showToast = (msg, type = 'info') => {
     setToast({ msg, type });
     setTimeout(() => setToast(null), 4500);
   };
 
-  // Ensure we fetch the role first (fixes earlier glitch where page showed not-authorized)
+  // fetch current user's role from players table (we check session too)
   useEffect(() => {
     let mounted = true;
     (async () => {
       try {
-        const { data: { session } } = await supabase.auth.getSession();
-        const email = session?.user?.email;
+        const { data: sessionData } = await supabase.auth.getSession();
+        const email = sessionData?.session?.user?.email;
         if (!email) {
-          if (mounted) setRole('member'); // no session
+          if (mounted) setRole('member');
           return;
         }
-        // fetch role from players table
-        const { data, error } = await supabase
-          .from('players')
-          .select('role')
-          .eq('email', email)
-          .single();
+        const { data, error } = await supabase.from('players').select('role').eq('email', email).single();
         if (error || !data) {
           if (mounted) setRole('member');
         } else {
           if (mounted) setRole(data.role || 'member');
         }
       } catch (err) {
-        console.error('role fetch err', err);
+        console.error('role check error', err);
         if (mounted) setRole('member');
       }
     })();
-    return () => { mounted = false; };
+    return () => (mounted = false);
   }, []);
 
-  // fetch unmapped players for grant access view
+  // fetch audit logs (with optional filters)
+  const fetchAuditEntries = async ({ type = null, batchId = null } = {}) => {
+    setAuditLoading(true);
+    try {
+      let q = supabase.from('audit_logs').select('*').order('created_at', { ascending: false }).limit(200);
+      if (type) q = q.eq('type', type);
+      if (batchId) q = q.eq('details->>batchId', batchId);
+      if (filterAuditFrom) q = q.gte('created_at', filterAuditFrom);
+      if (filterAuditTo) q = q.lte('created_at', filterAuditTo);
+      const { data, error } = await q;
+      if (error) throw error;
+      setAuditEntries(data || []);
+    } catch (err) {
+      console.error('fetch audit err', err);
+      showToast('Failed to fetch audit logs', 'error');
+    }
+    setAuditLoading(false);
+  };
+
+  // fetch players where can_login false (unmapped)
   const fetchUnmappedPlayers = async () => {
     setLoadingGrant(true);
     try {
-      // players with can_login = false (or null)
       const { data, error } = await supabase
         .from('players')
-        .select('id, full_name, email, igg_id, profile_image_url, battle_rating, might, created_at, can_login')
+        .select('id,full_name,email,igg_id,profile_image_url,battle_rating,might,created_at,can_login')
         .or('can_login.eq.false,can_login.is.null')
-        .order('battle_rating', { ascending: false });
-
+        .order('battle_rating', { ascending: false })
+        .limit(1000);
       if (error) throw error;
       setUnmappedPlayers(data || []);
       // reset selection map
       const sel = {};
-      (data || []).forEach(p => { sel[p.id] = false; });
+      (data || []).forEach(p => (sel[p.id] = false));
       setGrantSelection(sel);
     } catch (err) {
       console.error('fetchUnmappedPlayers', err);
@@ -119,47 +135,26 @@ export default function BulkRegPage() {
     setLoadingGrant(false);
   };
 
-  // fetch audit entries for current filters (we keep it limited to recent days)
-  const fetchAuditEntries = async ({type = null, batchId = null} = {}) => {
-    setAuditLoading(true);
-    try {
-      let q = supabase.from('audit_logs').select('*').order('created_at', { ascending: false }).limit(200);
-      // apply simple filters
-      if (type) q = q.eq('type', type);
-      if (batchId) q = q.eq('details->>batchId', batchId);
-      if (filterAuditDateFrom) q = q.gte('created_at', filterAuditDateFrom);
-      if (filterAuditDateTo) q = q.lte('created_at', filterAuditDateTo);
-      const { data, error } = await q;
-      if (error) throw error;
-      setAuditEntries(data || []);
-    } catch (err) {
-      console.error('fetchAuditEntries', err);
-      showToast('Failed to load audit logs', 'error');
-    }
-    setAuditLoading(false);
-  };
-
-  // CSV parsing - simple, minimal, no dependencies.
-  // Accepts CSV with header row. Returns array of objects.
-  const parseCSVText = (text) => {
+  // CSV parsing (simple)
+  const parseCSVText = text => {
     const lines = text.replace(/\r/g, '').split('\n').map(l => l.trim()).filter(Boolean);
     if (lines.length <= 1) return [];
     const headers = lines[0].split(',').map(h => h.trim());
     const rows = lines.slice(1).map(line => {
+      // naive CSV split — assumes no commas inside fields
       const vals = line.split(',').map(v => v.trim());
       const obj = {};
-      headers.forEach((h, i) => { obj[h] = vals[i] ?? ''; });
+      headers.forEach((h, i) => (obj[h] = vals[i] ?? ''));
       return obj;
     });
     return rows;
   };
 
-  // Handler for CSV file input
-  const onCsvFileChange = (e) => {
+  const onCsvFileChange = e => {
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = (ev) => {
+    reader.onload = ev => {
       try {
         const text = ev.target.result;
         const parsed = parseCSVText(text);
@@ -167,124 +162,190 @@ export default function BulkRegPage() {
         setUploadResults([]);
         showToast(`Loaded ${parsed.length} records`, 'success');
       } catch (err) {
-        console.error('CSV parse', err);
+        console.error('CSV parse err', err);
         showToast('Failed to parse CSV', 'error');
       }
     };
     reader.readAsText(file);
   };
 
-  // Bulk insert handler
+  // Helper: merge existing player with incoming row, but DO NOT overwrite existing values with empty CSV fields
+  const mergeNonEmpty = (existing, incoming) => {
+    const keys = Object.keys(incoming);
+    const out = { ...existing };
+    keys.forEach(k => {
+      const val = incoming[k];
+      if (val === undefined || val === null) return;
+      // treat empty string as "no value" => skip overwrite
+      if (typeof val === 'string' && val.trim() === '') return;
+      // convert numeric fields
+      if (['might', 'battle_rating', 'top_beast_might', 'top_hero_might'].includes(k)) {
+        const n = Number(val);
+        if (!Number.isNaN(n)) out[k] = n;
+      } else if (k === 'player_specialist_parent' || k === 'player_specialist_child') {
+        // handled outside
+      } else if (k === 'can_login') {
+        out[k] = (val === 'true' || val === '1');
+      } else {
+        out[k] = val;
+      }
+    });
+    return out;
+  };
+
+  // BULK UPLOAD: insert new players AND update existing without overwriting empty CSV fields
   const handleBulkUpload = async () => {
     if (role !== 'admin') return showToast('Unauthorized', 'error');
-    if (!csvData || csvData.length === 0) return showToast('Upload a CSV first', 'warning');
+    if (!csvData || csvData.length === 0) return showToast('Upload CSV first', 'warning');
 
     setLoadingUpload(true);
-    setUploadProgress(0);
     setUploadResults([]);
+    setUploadProgress(0);
     const batchId = uuidv4();
     setLastBatchId(batchId);
 
     const results = [];
-    const BATCH_SIZE = 50; // safety batch size for DB inserts
     const total = csvData.length;
+    let doneCount = 0;
     let successCount = 0;
     let failureCount = 0;
 
-    // We'll create player objects matching your players schema.
-    // CSV headers expected (from your earlier template):
-    // full_name,email,country,troop_type,rank_name,might,battle_rating,top_beast_type,top_beast_might,top_hero_type,top_hero_name,top_hero_might,player_specialist_parent,player_specialist_child,igg_id,can_login
-    // IGG id handled here as igg_id column.
+    // Collect emails & igg ids in CSV to fetch existing players in one go
+    const emails = Array.from(new Set(csvData.map(r => (r.email || '').toLowerCase()).filter(Boolean)));
+    const iggIds = Array.from(new Set(csvData.map(r => (r.igg_id || '').trim()).filter(Boolean)));
 
-    for (let i = 0; i < total; i += BATCH_SIZE) {
-      const batch = csvData.slice(i, i + BATCH_SIZE);
-      // build insert rows
-      const insertRows = batch.map(row => {
-        const player_specialist = {
-          parent: row.player_specialist_parent || null,
-          child: row.player_specialist_child || null
-        };
-        return {
+    // fetch existing players by email or igg_id
+    let existingPlayers = [];
+    try {
+      const cond = [];
+      if (emails.length) cond.push(`email.in.(${emails.map(e => `"${e.replace(/"/g, '\\"')}"`).join(',')})`);
+      if (iggIds.length) cond.push(`igg_id.in.(${iggIds.map(i => `"${i.replace(/"/g, '\\"')}"`).join(',')})`);
+      if (cond.length) {
+        // using RPC: do two queries then merge results to avoid complex or() escaping issues
+        const byEmail = emails.length ? await supabase.from('players').select('*').in('email', emails) : { data: [] };
+        const byIgg = iggIds.length ? await supabase.from('players').select('*').in('igg_id', iggIds) : { data: [] };
+        existingPlayers = [...(byEmail.data || []), ...(byIgg.data || [])];
+      }
+    } catch (err) {
+      console.error('fetch existing players err', err);
+      // continue — we'll treat all as new (but still safe)
+      existingPlayers = [];
+    }
+
+    // Build maps for quick lookup by email or igg
+    const existingByEmail = {};
+    const existingByIgg = {};
+    existingPlayers.forEach(p => {
+      if (p.email) existingByEmail[(p.email || '').toLowerCase()] = p;
+      if (p.igg_id) existingByIgg[(p.igg_id || '').trim()] = p;
+    });
+
+    // We'll process rows sequentially to preserve granular non-empty-field updates
+    for (let i = 0; i < total; i++) {
+      const row = csvData[i];
+      try {
+        // normalize incoming
+        const incoming = {
           full_name: (row.full_name || '').trim() || null,
           email: (row.email || '').trim() || null,
           country: (row.country || '').trim() || null,
           troop_type: (row.troop_type || '').trim() || null,
-          // rank resolution is optional - keeping rank_name as text not id
-          // If rank_id is required, users can update later.
-          might: row.might ? Number(row.might) : 0,
-          battle_rating: row.battle_rating ? Number(row.battle_rating) : 0,
-          top_beast_type: row.top_beast_type || null,
+          might: row.might ? Number(row.might) : null,
+          battle_rating: row.battle_rating ? Number(row.battle_rating) : null,
+          top_beast_type: (row.top_beast_type || null),
           top_beast_might: row.top_beast_might ? Number(row.top_beast_might) : null,
-          top_hero_type: row.top_hero_type || null,
-          top_hero_name: row.top_hero_name || null,
+          top_hero_type: (row.top_hero_type || null),
+          top_hero_name: (row.top_hero_name || null),
           top_hero_might: row.top_hero_might ? Number(row.top_hero_might) : null,
-          player_specialist,
+          player_specialist: {
+            parent: row.player_specialist_parent || null,
+            child: row.player_specialist_child || null
+          },
           igg_id: (row.igg_id || '').trim() || null,
           upload_batch_id: batchId,
-          role: row.role || 'member',
+          role: (row.role || 'member'),
           can_login: (row.can_login === 'true' || row.can_login === '1') ? true : false
         };
-      });
 
-      // Insert batch and capture per-row errors via returning inserted rows and failures separately
-      try {
-        const { data, error } = await supabase.from('players').insert(insertRows).select('id, email, full_name, igg_id');
-        if (error) {
-          // Whole batch failed — mark each row as failed
-          batch.forEach((r) => {
-            results.push({ row: r, status: 'fail', message: error.message || 'Insert failed' });
-            failureCount++;
-          });
+        // find existing by email or igg
+        const keyEmail = (incoming.email || '').toLowerCase();
+        const keyIgg = (incoming.igg_id || '').trim();
+        const existing = keyEmail ? existingByEmail[keyEmail] : existingByIgg[keyIgg];
+
+        if (existing) {
+          // Merge incoming non-empty into existing record
+          const merged = mergeNonEmpty(existing, incoming);
+
+          // If incoming includes player_specialist with values, set them; otherwise keep existing value
+          if (incoming.player_specialist.parent || incoming.player_specialist.child) {
+            merged.player_specialist = {
+              parent: incoming.player_specialist.parent || existing.player_specialist?.parent || null,
+              child: incoming.player_specialist.child || existing.player_specialist?.child || null
+            };
+          } else {
+            // keep existing player_specialist if present
+            merged.player_specialist = existing.player_specialist || null;
+          }
+
+          // Update only changed fields (we just send merged object)
+          const { error } = await supabase.from('players').update(merged).eq('id', existing.id);
+          if (error) throw error;
+
+          results.push({ row, status: 'success', message: 'Updated' });
+          successCount++;
         } else {
-          // data contains inserted rows; need to mark success for matching emails
-          // Build map of inserted emails for quick lookup
-          const insertedEmails = new Set((data || []).map(d => (d.email || '').toLowerCase()));
-          batch.forEach(r => {
-            if (insertedEmails.has((r.email || '').toLowerCase())) {
-              results.push({ row: r, status: 'success', message: 'Inserted' });
-              successCount++;
-            } else {
-              // Rare: not in returned data — mark as failed
-              results.push({ row: r, status: 'fail', message: 'Unknown insert result' });
-              failureCount++;
-            }
-          });
+          // Insert new record
+          const insertObj = {
+            full_name: incoming.full_name,
+            email: incoming.email,
+            country: incoming.country,
+            troop_type: incoming.troop_type,
+            might: incoming.might || 0,
+            battle_rating: incoming.battle_rating || 0,
+            top_beast_type: incoming.top_beast_type,
+            top_beast_might: incoming.top_beast_might,
+            top_hero_type: incoming.top_hero_type,
+            top_hero_name: incoming.top_hero_name,
+            top_hero_might: incoming.top_hero_might,
+            player_specialist: incoming.player_specialist,
+            igg_id: incoming.igg_id,
+            upload_batch_id: batchId,
+            role: incoming.role || 'member',
+            can_login: incoming.can_login || false
+          };
+          const { data: inserted, error } = await supabase.from('players').insert([insertObj]).select('id,email');
+          if (error) throw error;
+          results.push({ row, status: 'success', message: 'Inserted' });
+          successCount++;
         }
       } catch (err) {
-        console.error('batch insert error', err);
-        batch.forEach((r) => {
-          results.push({ row: r, status: 'fail', message: err.message || 'Error' });
-          failureCount++;
-        });
+        console.error('row error', row, err);
+        results.push({ row, status: 'fail', message: err.message || 'Error' });
+        failureCount++;
+      } finally {
+        doneCount++;
+        setUploadProgress(Math.round((doneCount / total) * 100));
       }
+    } // end for
 
-      // update progress
-      const done = Math.min(i + BATCH_SIZE, total);
-      setUploadProgress(Math.round((done / total) * 100));
-    }
-
-    // Save audit log for this batch
+    // Write audit log for this bulk upload
     try {
-      const performedBy = (await supabase.auth.getSession()).data.session?.user?.email || 'system';
+      const { data: sessionData } = await supabase.auth.getSession();
+      const performedBy = sessionData?.session?.user?.email || 'system';
       const details = {
         batchId,
-        total: csvData.length,
+        total,
         success: successCount,
         failure: failureCount,
         sampleFailures: results.filter(r => r.status === 'fail').slice(0, 6).map(f => ({ email: f.row.email, message: f.message }))
       };
-      await supabase.from('audit_logs').insert([{
-        type: 'bulkupload',
-        performed_by: performedBy,
-        details
-      }]);
-      showToast(`Bulk upload complete — ${successCount} success / ${failureCount} failed`, 'success');
-      // fetch and display audit for this batch
+      await supabase.from('audit_logs').insert([{ type: 'bulkupload', performed_by: performedBy, details }]);
+      // refresh recent audit entries for this batch
       await fetchAuditEntries({ type: 'bulkupload', batchId });
       setShowBulkAudit(true);
     } catch (err) {
-      console.error('audit insert error', err);
-      showToast('Bulk upload completed but failed to write audit log', 'warning');
+      console.error('audit write error', err);
+      showToast('Upload done but failed to write audit log', 'warning');
     }
 
     setUploadResults(results);
@@ -292,52 +353,139 @@ export default function BulkRegPage() {
     setUploadProgress(100);
     setLastBatchId(batchId);
 
-    // Refresh unmapped players (they might have been created)
+    // refresh unmapped players
     fetchUnmappedPlayers();
+    showToast(`Bulk upload finished: ${successCount} success / ${failureCount} failed`, 'success');
+  }; // end handleBulkUpload
+
+  // Rollback last batch (deletes players with upload_batch_id = lastBatchId)
+  const handleRollbackLastBatch = async () => {
+    if (role !== 'admin') return showToast('Unauthorized', 'error');
+    if (!lastBatchId) return showToast('No batch to rollback', 'warning');
+    if (!confirm('Rollback last batch? This will delete players created/updated in last batch.')) return;
+    try {
+      // Delete players created by this batch (note: if update merged changed existing players, this deletion may not restore previous state)
+      // We only delete rows where upload_batch_id matches.
+      const { error } = await supabase.from('players').delete().eq('upload_batch_id', lastBatchId);
+      if (error) throw error;
+      // write audit
+      const { data: sessionData } = await supabase.auth.getSession();
+      const performedBy = sessionData?.session?.user?.email || 'system';
+      await supabase.from('audit_logs').insert([{ type: 'bulkupload_rollback', performed_by: performedBy, details: { batchId: lastBatchId } }]);
+      showToast('Rollback completed', 'success');
+      setLastBatchId(null);
+      // refresh
+      fetchUnmappedPlayers();
+      fetchAuditEntries({ type: 'bulkupload' });
+    } catch (err) {
+      console.error('rollback err', err);
+      showToast('Rollback failed', 'error');
+    }
   };
 
-  // Grant Access logic: update selected players can_login -> true and write audit log
-  const toggleGrantSelection = (id) => {
-    setGrantSelection(prev => ({ ...prev, [id]: !prev[id] }));
-  };
+  // GRANT ACCESS: update players.can_login = true for selected players and try to map to auth.users by email/igg
+  const toggleGrantSelection = id => setGrantSelection(prev => ({ ...prev, [id]: !prev[id] }));
 
   const toggleSelectAllGrant = () => {
-    const allTrue = Object.values(grantSelection).every(v => v);
+    const allTrue = Object.values(grantSelection).length && Object.values(grantSelection).every(Boolean);
     const newMap = {};
-    (unmappedPlayers || []).forEach(p => newMap[p.id] = !allTrue);
+    (unmappedPlayers || []).forEach(p => (newMap[p.id] = !allTrue));
     setGrantSelection(newMap);
   };
 
   const handleGrantAccess = async () => {
     if (role !== 'admin') return showToast('Unauthorized', 'error');
-
-    const selectedIds = Object.entries(grantSelection).filter(([k, v]) => v).map(([k]) => k);
-    if (!selectedIds.length) return showToast('No players selected', 'warning');
+    const selected = Object.entries(grantSelection).filter(([_, v]) => v).map(([k]) => k);
+    if (!selected.length) return showToast('No players selected', 'warning');
 
     setLoadingGrant(true);
+    let granted = 0;
+    const failed = [];
+
+    for (let i = 0; i < selected.length; i++) {
+      const pid = selected[i];
+      try {
+        // fetch player
+        const { data: [player] = [], error: fetchErr } = await supabase.from('players').select('*').eq('id', pid).limit(1);
+        if (fetchErr || !player) {
+          failed.push({ id: pid, reason: 'player not found' });
+          continue;
+        }
+
+        // Try to find auth user by email first, then by igg_id stored in user_metadata (if any)
+        let authUser = null;
+        if (player.email) {
+          try {
+            // uses admin API
+            const listRes = await supabase.auth.admin.listUsers({ query: player.email });
+            // supabase-js admin method returns { data: { users: [...] } } or { data: users } depending on version
+            // handle both shapes
+            const users = listRes?.data?.users ?? listRes?.data ?? listRes?.users ?? [];
+            authUser = (users || []).find(u => (u.email || '').toLowerCase() === (player.email || '').toLowerCase());
+          } catch (err) {
+            // fallback: try to fetch auth.users via from('auth.users') if your DB allows
+            console.warn('admin.listUsers error (might be supabase-js version or permissions)', err);
+            try {
+              const { data: udata } = await supabase.from('auth.users').select('*').eq('email', player.email).limit(1);
+              if (udata && udata.length) authUser = udata[0];
+            } catch (err2) {
+              // ignore
+            }
+          }
+        }
+
+        // If still not found and igg_id exists, try by metadata. This is best-effort.
+        if (!authUser && player.igg_id) {
+          try {
+            const listRes = await supabase.auth.admin.listUsers();
+            const users = listRes?.data?.users ?? listRes?.data ?? listRes?.users ?? [];
+            authUser = (users || []).find(u => {
+              const metaIgg = u.user_metadata?.igg_id || u?.app_metadata?.igg_id;
+              return metaIgg && (metaIgg + '').trim() === (player.igg_id + '').trim();
+            });
+          } catch (err) {
+            // ignore
+          }
+        }
+
+        // Update players.can_login = true, and if able, store auth_user_id (best-effort)
+        let updateObj = { can_login: true };
+        if (authUser && authUser.id) {
+          // attempt to set auth_user_id if the column exists
+          updateObj.auth_user_id = authUser.id;
+        }
+
+        const { error: updErr } = await supabase.from('players').update(updateObj).eq('id', pid);
+        if (updErr) {
+          failed.push({ id: pid, reason: updErr.message });
+          continue;
+        }
+
+        granted++;
+      } catch (err) {
+        console.error('grant err', err);
+        failed.push({ id: pid, reason: err.message || 'Error' });
+      }
+    }
+
+    // Write audit
     try {
-      // update players can_login true
-      const { error } = await supabase.from('players').update({ can_login: true }).in('id', selectedIds);
-      if (error) throw error;
-
-      // Write audit
-      const performedBy = (await supabase.auth.getSession()).data.session?.user?.email || 'system';
-      const details = { playerIds: selectedIds, count: selectedIds.length };
+      const { data: sessionData } = await supabase.auth.getSession();
+      const performedBy = sessionData?.session?.user?.email || 'system';
+      const details = { playerIds: selected, granted, failedCount: failed.length, failedSample: failed.slice(0, 6) };
       await supabase.from('audit_logs').insert([{ type: 'grant_access', performed_by: performedBy, details }]);
-
-      showToast(`Granted access to ${selectedIds.length} players`, 'success');
-      // refresh tables + audit view
-      await fetchUnmappedPlayers();
       await fetchAuditEntries({ type: 'grant_access' });
       setShowGrantAudit(true);
     } catch (err) {
-      console.error('grant access error', err);
-      showToast('Grant access failed', 'error');
+      console.error('grant audit write', err);
+      showToast('Granted but failed to write audit', 'warning');
     }
+
     setLoadingGrant(false);
+    fetchUnmappedPlayers();
+    showToast(`Grant access done: ${granted} granted, ${failed.length} failed`, failed.length ? 'warning' : 'success');
   };
 
-  // derived data: results summary
   const uploadSummary = useMemo(() => {
     const total = uploadResults.length;
     const success = uploadResults.filter(r => r.status === 'success').length;
@@ -345,37 +493,35 @@ export default function BulkRegPage() {
     return { total, success, fail };
   }, [uploadResults]);
 
-  // ensure unmapped players loaded when grant section active
+  // load initial audit entries for bulkupload on mount
+  useEffect(() => {
+    fetchAuditEntries({ type: 'bulkupload' });
+  }, []);
+
+  // load unmapped players when grant section selected
   useEffect(() => {
     if (section === 'grant') {
       fetchUnmappedPlayers();
       fetchAuditEntries({ type: 'grant_access' });
-    } else if (section === 'bulk') {
-      fetchAuditEntries({ type: 'bulkupload' });
     }
   }, [section]);
 
-  // guard render until role loaded
-  if (role === null) {
-    return <div className="flex items-center justify-center min-h-screen text-white">Checking permissions...</div>;
-  }
-
-  // If not admin, show friendly message (but still allow view of logs if you want — per your policy only admins can perform)
-  if (role !== 'admin') {
+  // RENDER GUARDS
+  if (role === null) return <div className="flex items-center justify-center min-h-screen text-white">Checking permissions...</div>;
+  if (role !== 'admin')
     return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-black to-gray-800 p-6 text-white">
+      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-black to-gray-800 text-white p-6">
         <div className="max-w-3xl mx-auto bg-white/5 p-6 rounded-lg border border-white/10 text-center">
           <h2 className="text-2xl font-bold mb-4">🔒 Admin access required</h2>
-          <p className="text-gray-300">You need admin privileges to bulk upload players or grant access.</p>
+          <p className="text-gray-300">Only admins can upload players or grant access from this dashboard.</p>
         </div>
       </div>
     );
-  }
 
-  // ---------- Render Admin UI ----------
+  // MAIN UI
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-black to-gray-800 text-white py-8 px-4">
-      {/* toast */}
+    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-black to-gray-800 text-white pt-24 px-4">
+      {/* Toast */}
       {toast && (
         <div className={`fixed top-5 right-5 px-4 py-2 rounded shadow-lg z-50 ${toast.type === 'success' ? 'bg-green-600' : toast.type === 'error' ? 'bg-red-600' : 'bg-blue-600'}`}>
           {toast.msg}
@@ -383,7 +529,7 @@ export default function BulkRegPage() {
       )}
 
       <div className="max-w-7xl mx-auto">
-        <h1 className="text-4xl font-extrabold text-center mb-6 bg-clip-text text-transparent bg-gradient-to-r from-yellow-400 to-orange-500">
+        <h1 className="text-4xl font-extrabold text-center mb-6 bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-purple-500">
           ⚙️ Bulk Upload & Grant Access
         </h1>
 
@@ -395,66 +541,56 @@ export default function BulkRegPage() {
 
         {/* ---------------- BULK UPLOAD ---------------- */}
         {section === 'bulk' && (
-          <div className="bg-white/5 p-6 rounded-2xl border border-white/10 shadow-lg">
+          <div className="bg-white/10 p-6 rounded-2xl border border-white/20 shadow-2xl">
             <div className="flex flex-col md:flex-row gap-4 items-start md:items-center">
               <div className="flex-1">
                 <h2 className="text-xl font-semibold mb-2">Bulk Add Player Profiles (CSV)</h2>
-                <p className="text-sm text-gray-300 mb-3">Upload CSV (header row required). Template below. IGG ID is supported via 'igg_id' column.</p>
-                <div className="text-xs text-gray-400 mb-2">Expected headers (one line):</div>
-                <pre className="bg-gray-900 p-3 rounded text-xs overflow-auto text-gray-200">full_name,email,country,troop_type,rank_name,might,battle_rating,top_beast_type,top_beast_might,top_hero_type,top_hero_name,top_hero_might,player_specialist_parent,player_specialist_child,igg_id,can_login</pre>
+                <p className="text-sm text-gray-300 mb-3">Upload CSV (header row required). The upload supports IGG ID via column <code className="bg-gray-800 px-1 py-0.5 rounded">igg_id</code>.</p>
+                <div className="text-xs text-gray-400 mb-2">Expected headers:</div>
+                <pre className="bg-gray-900 p-3 rounded text-xs overflow-auto text-gray-200">
+full_name,email,country,troop_type,rank_name,might,battle_rating,top_beast_type,top_beast_might,top_hero_type,top_hero_name,top_hero_might,player_specialist_parent,player_specialist_child,igg_id,can_login
+                </pre>
               </div>
 
               <div className="flex flex-col gap-3 w-full md:w-auto">
                 <input type="file" accept=".csv" onChange={onCsvFileChange} className="bg-gray-800 p-2 rounded" />
-                <button onClick={() => {
-                  const sample = `full_name,email,country,troop_type,rank_name,might,battle_rating,top_beast_type,top_beast_might,top_hero_type,top_hero_name,top_hero_might,player_specialist_parent,player_specialist_child,igg_id,can_login
+                <button
+                  onClick={() => {
+                    const sample = `full_name,email,country,troop_type,rank_name,might,battle_rating,top_beast_type,top_beast_might,top_hero_type,top_hero_name,top_hero_might,player_specialist_parent,player_specialist_child,igg_id,can_login
 John Doe,john@example.com,USA,Infantry,Elite,1250000,4500,Dragon,80000,Infantry,Ares,70000,Infantry,Field,JOHNIGG,false`;
-                  const blob = new Blob([sample], { type: 'text/csv' });
-                  const url = URL.createObjectURL(blob);
-                  const a = document.createElement('a');
-                  a.href = url;
-                  a.download = 'hdx_bulk_players_template.csv';
-                  a.click();
-                }} className="bg-green-600 px-4 py-2 rounded">📄 Download Template</button>
-
-                <button disabled={loadingUpload} onClick={handleBulkUpload} className={`px-4 py-2 rounded ${loadingUpload ? 'bg-gray-600' : 'bg-blue-600'}`}>
-                  {loadingUpload ? `Uploading ${uploadProgress}%` : 'Upload to Database'}
+                    const blob = new Blob([sample], { type: 'text/csv' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = 'hdx_bulk_players_template.csv';
+                    a.click();
+                  }}
+                  className="bg-green-600 px-4 py-2 rounded text-white"
+                >
+                  Download CSV Template
                 </button>
 
-                <button onClick={() => {
-                  // quick rollback of last batch (if present)
-                  if (!lastBatchId) return showToast('No batch to rollback', 'warning');
-                  if (!confirm('Rollback last batch? This deletes players created by the last import.')) return;
-                  (async () => {
-                    try {
-                      const { error } = await supabase.from('players').delete().eq('upload_batch_id', lastBatchId);
-                      if (error) throw error;
-                      showToast('Last batch rolled back', 'success');
-                      setLastBatchId(null);
-                      // also write audit
-                      const performedBy = (await supabase.auth.getSession()).data.session?.user?.email || 'system';
-                      await supabase.from('audit_logs').insert([{ type: 'bulkupload_rollback', performed_by: performedBy, details: { batchId: lastBatchId } }]);
-                      fetchAuditEntries({ type: 'bulkupload' });
-                      fetchUnmappedPlayers();
-                    } catch (err) {
-                      console.error('rollback err', err);
-                      showToast('Rollback failed', 'error');
-                    }
-                  })();
-                }} className="bg-red-600 px-4 py-2 rounded">🔁 Rollback Last Batch</button>
+                <div className="flex gap-2">
+                  <button onClick={handleBulkUpload} disabled={loadingUpload} className={`px-4 py-2 rounded ${loadingUpload ? 'bg-gray-600' : 'bg-blue-600'}`}>
+                    {loadingUpload ? `Uploading... ${uploadProgress}%` : 'Start Bulk Upload'}
+                  </button>
+
+                  <button onClick={handleRollbackLastBatch} className="bg-red-600 px-4 py-2 rounded">
+                    🔁 Rollback Last Batch
+                  </button>
+                </div>
               </div>
             </div>
 
-            {/* Progress & results summary */}
+            {/* Progress */}
             <div className="mt-6">
-              <div className="mb-2 text-sm text-gray-300">Upload progress</div>
               <div className="w-full bg-gray-800 h-3 rounded overflow-hidden">
-                <div className="h-3 bg-gradient-to-r from-blue-400 to-purple-500" style={{ width: `${uploadProgress}%` }} />
+                <div className="h-3 bg-gradient-to-r from-indigo-500 to-purple-600 transition-all" style={{ width: `${uploadProgress}%` }} />
               </div>
-              <div className="mt-3 text-sm text-gray-300">Total: {uploadSummary.total} • Success: {uploadSummary.success} • Failed: {uploadSummary.fail}</div>
+              <div className="mt-3 text-sm text-gray-300">Progress: {uploadProgress}% • Processed: {uploadResults.length ? uploadResults.length : 0}</div>
             </div>
 
-            {/* Results table */}
+            {/* Results */}
             <div className="mt-6 overflow-x-auto rounded border border-gray-700">
               <table className="min-w-full text-sm text-gray-200">
                 <thead className="bg-gray-900 text-white">
@@ -469,7 +605,7 @@ John Doe,john@example.com,USA,Infantry,Elite,1250000,4500,Dragon,80000,Infantry,
                 </thead>
                 <tbody>
                   {uploadResults.length === 0 ? (
-                    <tr><td colSpan={6} className="text-center py-6 text-gray-400 italic">No results yet</td></tr>
+                    <tr><td colSpan={6} className="text-center py-6 italic text-gray-400">No results yet</td></tr>
                   ) : (
                     uploadResults.map((r, idx) => (
                       <tr key={idx} className={`border-t border-gray-800 ${r.status === 'success' ? '' : 'bg-gray-900'}`}>
@@ -486,16 +622,17 @@ John Doe,john@example.com,USA,Infantry,Elite,1250000,4500,Dragon,80000,Infantry,
               </table>
             </div>
 
-            {/* Audit logs toggle */}
+            {/* Audit toggle */}
             <div className="mt-4 flex items-center gap-3">
               <button onClick={() => { setShowBulkAudit(s => !s); if (!showBulkAudit) fetchAuditEntries({ type: 'bulkupload', batchId: lastBatchId }); }} className="px-3 py-1 bg-gray-700 rounded">
                 {showBulkAudit ? 'Hide' : 'Show'} Bulk Audit Logs
               </button>
 
-              <div className="ml-auto text-xs text-gray-300">Filter audit by date:</div>
-              <input type="date" value={filterAuditDateFrom} onChange={e => setFilterAuditDateFrom(e.target.value)} className="bg-gray-800 p-1 rounded text-xs" />
-              <input type="date" value={filterAuditDateTo} onChange={e => setFilterAuditDateTo(e.target.value)} className="bg-gray-800 p-1 rounded text-xs" />
-              <button onClick={() => fetchAuditEntries({ type: 'bulkupload', batchId: lastBatchId })} className="px-3 py-1 bg-blue-600 rounded text-xs">Apply</button>
+              <div className="ml-auto flex items-center gap-2">
+                <input type="date" value={filterAuditFrom} onChange={e => setFilterAuditFrom(e.target.value)} className="bg-gray-800 p-1 rounded text-xs" />
+                <input type="date" value={filterAuditTo} onChange={e => setFilterAuditTo(e.target.value)} className="bg-gray-800 p-1 rounded text-xs" />
+                <button onClick={() => fetchAuditEntries({ type: 'bulkupload', batchId: lastBatchId })} className="px-3 py-1 bg-blue-600 rounded text-xs">Apply</button>
+              </div>
             </div>
 
             {showBulkAudit && (
@@ -511,9 +648,9 @@ John Doe,john@example.com,USA,Infantry,Elite,1250000,4500,Dragon,80000,Infantry,
                   </thead>
                   <tbody>
                     {auditLoading ? (
-                      <tr><td colSpan={4} className="text-center py-6">Loading...</td></tr>
+                      <tr><td colSpan={4} className="py-6 text-center">Loading...</td></tr>
                     ) : auditEntries.length === 0 ? (
-                      <tr><td colSpan={4} className="text-center py-6 text-gray-400 italic">No audit logs</td></tr>
+                      <tr><td colSpan={4} className="py-6 text-center italic text-gray-400">No audit logs</td></tr>
                     ) : (
                       auditEntries.map(a => (
                         <tr key={a.id} className="border-t border-gray-800">
@@ -533,32 +670,39 @@ John Doe,john@example.com,USA,Infantry,Elite,1250000,4500,Dragon,80000,Infantry,
 
         {/* ---------------- GRANT ACCESS ---------------- */}
         {section === 'grant' && (
-          <div className="bg-white/5 p-6 rounded-2xl border border-white/10 shadow-lg">
-            <div className="flex items-center justify-between gap-3 mb-4">
+          <div className="bg-white/10 p-6 rounded-2xl border border-white/20 shadow-2xl">
+            <div className="flex flex-col md:flex-row md:items-center justify-between mb-4 gap-3">
               <div>
-                <h2 className="text-xl font-semibold">Grant Access</h2>
-                <p className="text-sm text-gray-300">Shows players where <code className="text-xs bg-gray-800 px-1 py-0.5 rounded">can_login</code> is false (or null).</p>
+                <h2 className="text-xl font-semibold mb-1">Grant Access</h2>
+                <p className="text-sm text-gray-300">Players with <code className="bg-gray-800 px-1 py-0.5 rounded">can_login=false</code>.</p>
               </div>
 
               <div className="flex gap-2">
                 <button onClick={() => fetchUnmappedPlayers()} className="bg-gray-700 px-3 py-1 rounded">Refresh</button>
                 <button onClick={toggleSelectAllGrant} className="bg-gray-700 px-3 py-1 rounded">Toggle Select All</button>
-                <button onClick={handleGrantAccess} disabled={loadingGrant} className={`bg-blue-600 px-3 py-1 rounded ${loadingGrant ? 'opacity-60' : ''}`}>Grant Selected</button>
+                <button onClick={handleGrantAccess} disabled={loadingGrant} className={`bg-blue-600 px-3 py-1 rounded ${loadingGrant ? 'opacity-60' : ''}`}>
+                  {loadingGrant ? 'Granting...' : 'Grant Selected'}
+                </button>
                 <button onClick={() => { setShowGrantAudit(s => !s); if (!showGrantAudit) fetchAuditEntries({ type: 'grant_access' }); }} className="bg-gray-700 px-3 py-1 rounded">
                   {showGrantAudit ? 'Hide' : 'Show'} Audit
                 </button>
               </div>
             </div>
 
-            {/* Grant table & filters */}
-            <div className="mb-4 flex gap-3 items-center">
-              <input placeholder="Search by name, email or IGG" onChange={(e) => {
+            {/* search */}
+            <div className="mb-4">
+              <input placeholder="Search by name, email or IGG" onChange={e => {
                 const q = (e.target.value || '').toLowerCase();
                 if (!q) return fetchUnmappedPlayers();
-                setUnmappedPlayers(prev => (prev || []).filter(p => (p.full_name || '').toLowerCase().includes(q) || (p.email || '').toLowerCase().includes(q) || (p.igg_id || '').toLowerCase().includes(q)));
+                setUnmappedPlayers(prev => (prev || []).filter(p =>
+                  (p.full_name || '').toLowerCase().includes(q) ||
+                  (p.email || '').toLowerCase().includes(q) ||
+                  (p.igg_id || '').toLowerCase().includes(q)
+                ));
               }} className="bg-gray-800 p-2 rounded w-full md:w-1/3" />
             </div>
 
+            {/* table */}
             <div className="overflow-x-auto rounded border border-gray-700">
               <table className="min-w-full text-sm text-gray-200">
                 <thead className="bg-gray-900 text-white">
@@ -576,7 +720,7 @@ John Doe,john@example.com,USA,Infantry,Elite,1250000,4500,Dragon,80000,Infantry,
                   {loadingGrant ? (
                     <tr><td colSpan={7} className="py-6 text-center">Loading...</td></tr>
                   ) : unmappedPlayers.length === 0 ? (
-                    <tr><td colSpan={7} className="py-6 text-center text-gray-400 italic">No unmapped players</td></tr>
+                    <tr><td colSpan={7} className="py-6 text-center italic text-gray-400">No unmapped players</td></tr>
                   ) : (
                     unmappedPlayers.map(p => (
                       <tr key={p.id} className="border-t border-gray-800 hover:bg-gray-800/50">
@@ -601,7 +745,7 @@ John Doe,john@example.com,USA,Infantry,Elite,1250000,4500,Dragon,80000,Infantry,
               </table>
             </div>
 
-            {/* Grant audit logs */}
+            {/* Grant audit logs (toggle) */}
             {showGrantAudit && (
               <div className="mt-4 overflow-x-auto rounded border border-gray-700">
                 <table className="min-w-full text-sm text-gray-200">
@@ -616,7 +760,7 @@ John Doe,john@example.com,USA,Infantry,Elite,1250000,4500,Dragon,80000,Infantry,
                     {auditLoading ? (
                       <tr><td colSpan={3} className="py-6 text-center">Loading...</td></tr>
                     ) : auditEntries.filter(a => a.type === 'grant_access').length === 0 ? (
-                      <tr><td colSpan={3} className="py-6 text-center text-gray-400 italic">No grant access audits</td></tr>
+                      <tr><td colSpan={3} className="py-6 text-center italic text-gray-400">No grant access audits</td></tr>
                     ) : (
                       auditEntries.filter(a => a.type === 'grant_access').map(a => (
                         <tr key={a.id} className="border-t border-gray-800">
@@ -630,10 +774,8 @@ John Doe,john@example.com,USA,Infantry,Elite,1250000,4500,Dragon,80000,Infantry,
                 </table>
               </div>
             )}
-
           </div>
         )}
-
       </div>
     </div>
   );
