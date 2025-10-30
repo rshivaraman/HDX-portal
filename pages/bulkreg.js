@@ -1,8 +1,6 @@
 'use client';
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabaseClient';
-//import { v4 as uuidv4 } from 'uuid';
-
 
 // Simple UUID generator (no dependency)
 const uuidv4 = () =>
@@ -11,6 +9,7 @@ const uuidv4 = () =>
     const v = c === 'x' ? r : (r & 0x3) | 0x8;
     return v.toString(16);
   });
+
 export default function BulkReg() {
   const [role, setRole] = useState(null);
   const [csvData, setCsvData] = useState([]);
@@ -27,6 +26,7 @@ export default function BulkReg() {
     setTimeout(() => setToast(null), 4000);
   };
 
+  // Fetch admin role + ranks
   useEffect(() => {
     const fetchData = async () => {
       const { data: { session } } = await supabase.auth.getSession();
@@ -49,6 +49,7 @@ export default function BulkReg() {
     fetchData();
   }, []);
 
+  // CSV Upload handler
   const handleCSVUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -69,6 +70,7 @@ export default function BulkReg() {
     reader.readAsText(file);
   };
 
+  // Submit to Supabase
   const handleSubmit = async () => {
     if (role !== 'admin') return showToast('❌ Unauthorized access.', 'error');
     if (!csvData.length) return showToast('⚠️ Please upload a CSV first.', 'warning');
@@ -84,6 +86,7 @@ export default function BulkReg() {
     for (let i = 0; i < csvData.length; i++) {
       const row = csvData[i];
       const email = row.email?.trim() || null;
+      const igg_id = row.igg_id?.trim() || null;
       const full_name = row.full_name?.trim() || '';
       const country = row.country?.trim() || '';
       const troop_type = row.troop_type?.trim() || '';
@@ -113,6 +116,7 @@ export default function BulkReg() {
           {
             full_name,
             email,
+            igg_id,
             country,
             troop_type,
             rank_id,
@@ -131,8 +135,8 @@ export default function BulkReg() {
         if (error) throw error;
         setSuccessCount(prev => prev + 1);
       } catch (err) {
-        console.error('❌ Failed record:', email, err.message);
-        setFailures(prev => [...prev, { email, error: err.message }]);
+        console.error('❌ Failed record:', email || igg_id, err.message);
+        setFailures(prev => [...prev, { email, igg_id, error: err.message }]);
       }
 
       setProgress(Math.round(((i + 1) / csvData.length) * 100));
@@ -142,6 +146,7 @@ export default function BulkReg() {
     showToast(`✅ Upload complete. ${successCount} added, ${failures.length} failed.`, 'info');
   };
 
+  // Rollback
   const handleRollback = async () => {
     if (!lastBatchId) return showToast('⚠️ No recent batch found.', 'warning');
     const confirmDelete = confirm('⚠️ This will delete the last uploaded batch. Continue?');
@@ -154,10 +159,11 @@ export default function BulkReg() {
     setLastBatchId(null);
   };
 
+  // CSV Template
   const handleDownloadTemplate = () => {
     const csv =
-`full_name,email,country,troop_type,rank_name,might,battle_rating,top_beast_type,top_beast_might,top_hero_type,top_hero_name,top_hero_might,player_specialist_parent,player_specialist_child
-John Doe,john@example.com,USA,Infantry,Elite,1250000,4500,Dragon,80000,Infantry,Ares,70000,Infantry,Field`;
+`full_name,email,igg_id,country,troop_type,rank_name,might,battle_rating,top_beast_type,top_beast_might,top_hero_type,top_hero_name,top_hero_might,player_specialist_parent,player_specialist_child
+John Doe,john@example.com,123456789,USA,Infantry,Elite,1250000,4500,Dragon,80000,Infantry,Ares,70000,Infantry,Field`;
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -192,7 +198,7 @@ John Doe,john@example.com,USA,Infantry,Elite,1250000,4500,Dragon,80000,Infantry,
         <div className="text-gray-300 mb-6">
           <p>📘 <b>CSV Format:</b></p>
           <pre className="bg-gray-900 text-sm p-3 rounded-lg border border-gray-700 overflow-x-auto">
-            full_name,email,country,troop_type,rank_name,might,battle_rating,top_beast_type,top_beast_might,top_hero_type,top_hero_name,top_hero_might,player_specialist_parent,player_specialist_child
+            full_name,email,igg_id,country,troop_type,rank_name,might,battle_rating,top_beast_type,top_beast_might,top_hero_type,top_hero_name,top_hero_might,player_specialist_parent,player_specialist_child
           </pre>
           <button
             onClick={handleDownloadTemplate}
@@ -202,7 +208,7 @@ John Doe,john@example.com,USA,Infantry,Elite,1250000,4500,Dragon,80000,Infantry,
           </button>
         </div>
 
-        <div className="flex items-center gap-4 mb-6">
+        <div className="flex flex-wrap gap-3 mb-6">
           <input
             type="file"
             accept=".csv"
