@@ -23,6 +23,26 @@ export default function Login() {
     checkSession();
   }, [router]);
 
+  // 🔹 Log login attempts to audit table
+  const logLoginEvent = async (user, success, message = '') => {
+    try {
+      const ip = await fetch('https://api.ipify.org?format=json')
+        .then(r => r.json())
+        .catch(() => ({ ip: 'Unknown' }));
+
+      await supabase.from('login_audit_logs').insert({
+        user_id: user?.id || null,
+        email: user?.email || email,
+        ip_address: ip?.ip || 'Unknown',
+        user_agent: navigator.userAgent,
+        success,
+        message,
+      });
+    } catch (err) {
+      console.error('Audit log failed:', err);
+    }
+  };
+
   const handleLogin = async (e) => {
     e.preventDefault();
     setLoading(true);
@@ -33,24 +53,30 @@ export default function Login() {
     setLoading(false);
 
     if (error) {
-      if (error.message.includes('Email not confirmed')) {
-        setErrorMsg('Please confirm your email before logging in.');
-      } else {
-        setErrorMsg(error.message);
-      }
+      const msg = error.message.includes('Email not confirmed')
+        ? 'Please confirm your email before logging in.'
+        : error.message;
+
+      setErrorMsg(msg);
+      await logLoginEvent(null, false, msg);
       console.error('Login error:', error);
       return;
     }
 
     if (data?.user) {
       if (!data.user.email_confirmed_at) {
-        setErrorMsg('Your email is not confirmed yet. Check your inbox.');
+        const msg = 'Your email is not confirmed yet. Check your inbox.';
+        setErrorMsg(msg);
+        await logLoginEvent(data.user, false, msg);
         return;
       }
 
+      await logLoginEvent(data.user, true, 'Login successful');
       router.push('/profile');
     } else {
-      setErrorMsg('Login failed. Please check your credentials.');
+      const msg = 'Login failed. Please check your credentials.';
+      setErrorMsg(msg);
+      await logLoginEvent(null, false, msg);
     }
   };
 
@@ -60,7 +86,7 @@ export default function Login() {
     setResetMsg('');
 
     const { error } = await supabase.auth.resetPasswordForEmail(resetEmail, {
-      redirectTo: `${window.location.origin}/reset-password`, // You can handle reset here
+      redirectTo: `${window.location.origin}/reset-password`,
     });
 
     setResetLoading(false);
@@ -76,7 +102,7 @@ export default function Login() {
 
   return (
     <div className="flex items-center justify-center min-h-screen bg-gradient-to-b from-gray-900 to-gray-800 px-4 relative">
-      {/* Reset Password Modal */}
+      {/* 🔒 Reset Password Modal */}
       {showReset && (
         <div className="absolute inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50">
           <div className="bg-gray-900 w-full max-w-md rounded-2xl shadow-xl p-6 text-center relative">
@@ -122,10 +148,18 @@ export default function Login() {
         </div>
       )}
 
-      {/* Login Card */}
+      {/* 🔹 Login Card */}
       <div className="bg-gray-900 w-full max-w-md rounded-2xl shadow-2xl p-8 flex flex-col items-center">
-        <Image src="/logo.png" alt="HDX Logo" width={80} height={80} className="mb-4 rounded-full border-2 border-blue-400 shadow-md" />
-        <h1 className="text-3xl font-bold text-blue-400 mb-6 tracking-wide text-center">HDX Alliance Login</h1>
+        <Image
+          src="/logo.png"
+          alt="HDX Logo"
+          width={80}
+          height={80}
+          className="mb-4 rounded-full border-2 border-blue-400 shadow-md"
+        />
+        <h1 className="text-3xl font-bold text-blue-400 mb-6 tracking-wide text-center">
+          HDX Alliance Login
+        </h1>
 
         <form onSubmit={handleLogin} className="w-full flex flex-col gap-4">
           <input
