@@ -1,303 +1,531 @@
+// pages/player-management.js
 'use client';
-import { useEffect, useState } from 'react';
+
+import React, { useEffect, useState, useMemo } from 'react';
 import { supabase } from '../lib/supabaseClient';
 
-export default function EventPlayerDataAdmin() {
-  const [eventPlayers, setEventPlayers] = useState([]);
-  const [players, setPlayers] = useState([]);
+/**
+ * Player Management Admin Page
+ * - Show all player columns returned by players table
+ * - Admin-only for edit/delete
+ * - Edit modal updates only provided fields (won't overwrite with empty values)
+ * - Search / filter / sort / pagination
+ * - Mobile responsive with horizontal scroll for wide tables
+ */
+
+export default function PlayerManagement() {
+  // role loading: null = loading, 'admin' | 'member' | 'none'
   const [role, setRole] = useState(null);
+
+  // data
+  const [players, setPlayers] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  const [editingId, setEditingId] = useState(null);
-  const [form, setForm] = useState({});
+  // UI / controls
   const [search, setSearch] = useState('');
   const [troopFilter, setTroopFilter] = useState('');
-  const [specFilter, setSpecFilter] = useState('');
+  const [roleFilter, setRoleFilter] = useState('');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  const [sortField, setSortField] = useState('full_name');
+  const [sortAsc, setSortAsc] = useState(true);
+
+  // pagination
   const [page, setPage] = useState(1);
-  const perPage = 20;
+  const [perPage, setPerPage] = useState(20);
 
-  // Fetch role and initial data
+  // edit modal
+  const [editingPlayer, setEditingPlayer] = useState(null); // object or null
+  const [editForm, setEditForm] = useState({});
+  const [saving, setSaving] = useState(false);
+
+  // delete
+  const [deletingId, setDeletingId] = useState(null);
+
+  // toast
+  const [toast, setToast] = useState(null);
+  const showToast = (msg, type = 'info') => {
+    setToast({ msg, type });
+    setTimeout(() => setToast(null), 4500);
+  };
+
+  // fetch current user's role (try auth_user_id then email fallback)
   useEffect(() => {
-    const fetchInitialData = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      const email = session?.user?.email;
-      if (!email) return setRole(null);
+    let mounted = true;
+    (async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        const userId = session?.user?.id;
+        const email = session?.user?.email;
 
-      const { data: playerData, error: playerError } = await supabase
-        .from('players')
-        .select('role')
-        .eq('email', email)
-        .single();
+        if (!userId && !email) {
+          if (mounted) setRole('none');
+          return;
+        }
 
-      if (playerError || !playerData) return setRole(null);
-      setRole(playerData.role);
+        // try to find player by auth_user_id
+        if (userId) {
+          const { data: byAuth, error: errAuth } = await supabase
+            .from('players')
+            .select('role')
+            .eq('auth_user_id', userId)
+            .maybeSingle();
+          if (!errAuth && byAuth?.role) {
+            if (mounted) setRole(byAuth.role);
+            return;
+          }
+        }
 
-      await Promise.all([fetchEventPlayers(), fetchPlayers()]);
+        // fallback: find by email
+        if (email) {
+          const { data: byEmail, error: errEmail } = await supabase
+            .from('players')
+            .select('role')
+            .eq('email', email)
+            .maybeSingle();
+          if (!errEmail && byEmail?.role) {
+            if (mounted) setRole(byEmail.role);
+            return;
+          }
+        }
 
-      setLoading(false);
-    };
-
-    fetchInitialData();
+        if (mounted) setRole('member'); // default
+      } catch (err) {
+        console.error('role fetch error', err);
+        if (mounted) setRole('member');
+      }
+    })();
+    return () => { mounted = false; };
   }, []);
 
-  const fetchEventPlayers = async () => {
-    const { data, error } = await supabase
-      .from('event_players')
-      .select(`
-        *,
-        players(full_name, igg_id, might)
-      `)
-      .order('battle_rating', { ascending: false }); // default sort
-
-    if (!error) setEventPlayers(data || []);
-  };
-
+  // fetch players data
   const fetchPlayers = async () => {
-    const { data } = await supabase.from('players').select('*').order('full_name');
-    setPlayers(data || []);
+    setLoading(true);
+    try {
+      // select all columns - adapt if your players table is very wide
+      const { data, error } = await supabase
+        .from('players')
+        .select('*')
+        .order('full_name', { ascending: true });
+
+      if (error) throw error;
+      setPlayers(data || []);
+    } catch (err) {
+      console.error('fetchPlayers error', err);
+      showToast('Failed to load players', 'error');
+      setPlayers([]);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleChange = (e) => {
-    const { name, value } = e.target;
-    setForm({ ...form, [name]: value });
-  };
+  useEffect(() => {
+    fetchPlayers();
+  }, []);
 
-  const handleEdit = (row) => {
-    if (role !== 'admin') return;
-    setEditingId(row.id);
-    setForm({
-      player_id: row.player_id,
-      battle_rating: row.battle_rating || 0,
-      kills: row.kills || 0,
-      deaths: row.deaths || 0,
-      top_beast_might: row.top_beast_might || 0,
-      top_hero_might: row.top_hero_might || 0,
-      troop_type: row.troop_type || '',
-      specialization: row.specialization || ''
-    });
-  };
+  // Derived: filter & sort players client-side
+  const filteredSorted = useMemo(() => {
+    let list = Array.isArray(players) ? [...players] : [];
 
-  const handleCancel = () => {
-    setEditingId(null);
-    setForm({});
-  };
-
-  const handleSave = async () => {
-    if (role !== 'admin') return alert('You are not authorized to perform this action.');
-    if (!form.player_id) return alert("Please select a player.");
-
-    const record = {
-      ...form,
-      top_beast_might: form.top_beast_might ? Number(form.top_beast_might) : null,
-      top_hero_might: form.top_hero_might ? Number(form.top_hero_might) : null,
-      battle_rating: form.battle_rating ? Number(form.battle_rating) : 0,
-      kills: form.kills ? Number(form.kills) : 0,
-      deaths: form.deaths ? Number(form.deaths) : 0
-    };
-
-    if (editingId) {
-      const { error } = await supabase.from('event_players').update(record).eq('id', editingId);
-      if (error) return alert('Error updating: ' + error.message);
-    } else {
-      const { error } = await supabase.from('event_players').insert([record]);
-      if (error) return alert('Error adding: ' + error.message);
+    // search across full_name, email, igg_id
+    if (search.trim()) {
+      const q = search.trim().toLowerCase();
+      list = list.filter(p =>
+        (p.full_name || '').toLowerCase().includes(q) ||
+        (p.email || '').toLowerCase().includes(q) ||
+        (String(p.igg_id || '')).toLowerCase().includes(q)
+      );
     }
 
-    setEditingId(null);
-    setForm({});
-    fetchEventPlayers();
+    // troop filter
+    if (troopFilter) {
+      list = list.filter(p => (p.troop_type || '') === troopFilter);
+    }
+
+    // role filter
+    if (roleFilter) {
+      list = list.filter(p => (p.role || '') === roleFilter);
+    }
+
+    // date filters on created_at if available
+    if (dateFrom) {
+      const from = new Date(dateFrom);
+      list = list.filter(p => p.created_at && new Date(p.created_at) >= from);
+    }
+    if (dateTo) {
+      const to = new Date(dateTo);
+      // include whole day
+      to.setHours(23,59,59,999);
+      list = list.filter(p => p.created_at && new Date(p.created_at) <= to);
+    }
+
+    // sorting
+    const field = sortField || 'full_name';
+    list.sort((a, b) => {
+      const va = a[field];
+      const vb = b[field];
+      // handle nulls
+      if (va == null && vb == null) return 0;
+      if (va == null) return 1;
+      if (vb == null) return -1;
+
+      // numbers vs strings
+      if (typeof va === 'number' && typeof vb === 'number') {
+        return sortAsc ? va - vb : vb - va;
+      }
+      const sa = String(va).toLowerCase();
+      const sb = String(vb).toLowerCase();
+      return sortAsc ? sa.localeCompare(sb) : sb.localeCompare(sa);
+    });
+
+    return list;
+  }, [players, search, troopFilter, roleFilter, dateFrom, dateTo, sortField, sortAsc]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredSorted.length / perPage));
+  const paginated = filteredSorted.slice((page - 1) * perPage, page * perPage);
+
+  // open edit modal
+  const openEdit = (player) => {
+    setEditingPlayer(player);
+    // copy form defaults as strings to let admin clear or edit
+    const copy = {};
+    Object.keys(player || {}).forEach(k => {
+      // prefer to keep primitives only (no nested json)
+      const v = player[k];
+      copy[k] = v === null || v === undefined ? '' : v;
+    });
+    setEditForm(copy);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
+  // close edit modal
+  const closeEdit = () => {
+    setEditingPlayer(null);
+    setEditForm({});
+  };
+
+  // edit form change
+  const onEditChange = (k, v) => {
+    setEditForm(prev => ({ ...prev, [k]: v }));
+  };
+
+  // Save — only update fields that are non-empty or explicitly changed.
+  // Rule: do not overwrite existing DB field with an empty string.
+  const handleSave = async () => {
+    if (role !== 'admin') { showToast('Unauthorized', 'error'); return; }
+    if (!editingPlayer) return;
+
+    setSaving(true);
+    try {
+      // build payload: only include properties where editForm has a value different from DB OR is explicitly provided
+      const payload = {};
+      Object.entries(editForm).forEach(([k, v]) => {
+        // skip id, created_at, updated_at fields
+        if (['id', 'created_at', 'updated_at'].includes(k)) return;
+
+        // If v is empty string (''), we *do not* include it in payload (so we won't overwrite).
+        // But allow explicit false or 0 values.
+        if (v === '') return;
+
+        // Try to infer numeric columns: if DB value is number, convert
+        const dbVal = editingPlayer[k];
+        if (typeof dbVal === 'number') {
+          const n = Number(v);
+          // if NaN, skip
+          if (!Number.isNaN(n)) payload[k] = n;
+        } else if (typeof dbVal === 'boolean') {
+          // allow boolean toggle from string 'true'/'false' or checkbox
+          if (v === 'true' || v === true) payload[k] = true;
+          else if (v === 'false' || v === false) payload[k] = false;
+        } else {
+          // otherwise treat as string
+          payload[k] = v;
+        }
+      });
+
+      if (Object.keys(payload).length === 0) {
+        showToast('No changes to save (empty fields are ignored).', 'warning');
+        setSaving(false);
+        return;
+      }
+
+      const { error } = await supabase.from('players').update(payload).eq('id', editingPlayer.id);
+      if (error) throw error;
+
+      showToast('Player updated', 'success');
+      // refresh data
+      await fetchPlayers();
+      closeEdit();
+    } catch (err) {
+      console.error('save error', err);
+      showToast('Save failed: ' + (err.message || err), 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // delete
   const handleDelete = async (id) => {
-    if (role !== 'admin') return alert('You are not authorized to delete.');
-    if (!confirm('Are you sure?')) return;
-    const { error } = await supabase.from('event_players').delete().eq('id', id);
-    if (error) return alert('Error deleting: ' + error.message);
-    fetchEventPlayers();
+    if (role !== 'admin') { showToast('Unauthorized', 'error'); return; }
+    if (!confirm('Delete this player profile? This is irreversible.')) return;
+    try {
+      const { error } = await supabase.from('players').delete().eq('id', id);
+      if (error) throw error;
+      showToast('Player deleted', 'success');
+      await fetchPlayers();
+    } catch (err) {
+      console.error('delete err', err);
+      showToast('Delete failed', 'error');
+    }
   };
 
-  if (loading)
-    return <div className="flex justify-center items-center h-screen text-white text-lg">Loading event player data...</div>;
+  // Render
+  if (role === null) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-900 via-black to-gray-800 text-white">
+        Checking permissions...
+      </div>
+    );
+  }
 
-  // Filtering and searching
-  let filtered = eventPlayers.filter(ep => {
-    const name = ep.players?.full_name?.toLowerCase() || '';
-    return name.includes(search.toLowerCase());
-  });
-  if (troopFilter) filtered = filtered.filter(ep => ep.troop_type === troopFilter);
-  if (specFilter) filtered = filtered.filter(ep => ep.specialization === specFilter);
+  if (role !== 'admin' && role !== 'member') {
+    return (
+      <div className="min-h-screen p-6 bg-gradient-to-br from-gray-900 via-black to-gray-800 text-white">
+        <div className="max-w-3xl mx-auto bg-white/5 p-6 rounded-lg border border-white/10 text-center">
+          <h2 className="text-2xl font-bold mb-4">🔒 Access required</h2>
+          <p className="text-gray-300">Sign in as a valid user.</p>
+        </div>
+      </div>
+    );
+  }
 
-  const totalPages = Math.ceil(filtered.length / perPage);
-  const paginated = filtered.slice((page - 1) * perPage, page * perPage);
-
+  // Admin UI
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-black to-gray-800 text-white py-10 px-4">
-      <div className="max-w-7xl mx-auto backdrop-blur-md bg-black/40 p-6 rounded-2xl shadow-2xl border border-white/20 space-y-6">
-        <h2 className="text-3xl font-bold text-center bg-gradient-to-r from-blue-400 to-purple-500 bg-clip-text text-transparent">
-          Additional Player Data
-        </h2>
+    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-black to-gray-800 text-white py-8 px-4">
+      {/* toast */}
+      {toast && (
+        <div
+          className={`fixed top-5 right-5 px-4 py-2 rounded shadow-lg z-50 ${
+            toast.type === 'success' ? 'bg-green-600' : toast.type === 'error' ? 'bg-red-600' : 'bg-blue-600'
+          }`}
+        >
+          {toast.msg}
+        </div>
+      )}
 
-        {role === 'member' && (
-          <div className="bg-gray-800/70 border border-yellow-600 p-3 rounded-lg text-yellow-400 text-center mb-4">
-            🔒 You have view-only access.
+      <div className="max-w-7xl mx-auto backdrop-blur-md bg-black/40 p-6 rounded-2xl shadow-2xl border border-white/20">
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-4">
+          <h1 className="text-3xl font-extrabold bg-clip-text text-transparent bg-gradient-to-r from-yellow-400 to-orange-500">
+            ⚙️ Player Management
+          </h1>
+
+          <div className="flex gap-2 items-center">
+            <label className="text-sm text-gray-300 hidden md:block">Rows</label>
+            <select value={perPage} onChange={e => { setPerPage(Number(e.target.value)); setPage(1); }} className="bg-gray-800 p-2 rounded text-sm">
+              <option value={10}>10</option>
+              <option value={20}>20</option>
+              <option value={50}>50</option>
+              <option value={100}>100</option>
+            </select>
+
+            <button onClick={fetchPlayers} className="ml-2 bg-blue-600 px-3 py-2 rounded text-sm">Refresh</button>
           </div>
-        )}
-
-        {/* Add/Edit Form */}
-        {role === 'admin' && (
-          <div className="bg-black/30 border border-gray-700 p-6 rounded-xl shadow-inner space-y-3">
-            <h3 className="text-xl font-semibold text-blue-400">
-              {editingId ? '✏️ Edit Player Data' : '➕ Add Player Data'}
-            </h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              <select
-                name="player_id"
-                value={form.player_id || ''}
-                onChange={handleChange}
-                className="p-3 rounded-lg bg-gray-800/70 border border-gray-600 text-white"
-              >
-                <option value="">Select Player</option>
-                {players.map(p => (
-                  <option key={p.id} value={p.id}>{p.full_name} ({p.igg_id})</option>
-                ))}
-              </select>
-
-              <select
-                name="troop_type"
-                value={form.troop_type || ''}
-                onChange={handleChange}
-                className="p-3 rounded-lg bg-gray-800/70 border border-gray-600 text-white"
-              >
-                <option value="">Select Troop Type</option>
-                <option value="Infantry">Infantry</option>
-                <option value="Rider">Rider</option>
-                <option value="Ranged">Ranged</option>
-                <option value="Farm">Farm</option>
-              </select>
-
-              <select
-                name="specialization"
-                value={form.specialization || ''}
-                onChange={handleChange}
-                className="p-3 rounded-lg bg-gray-800/70 border border-gray-600 text-white"
-              >
-                <option value="">Select Specialization</option>
-                <option value="Field">Field</option>
-                <option value="Rally">Rally</option>
-                <option value="Garrison">Garrison</option>
-                <option value="Mixed">Mixed</option>
-              </select>
-
-              <input type="number" name="battle_rating" placeholder="Battle Rating" value={form.battle_rating || ''} onChange={handleChange} className="p-3 rounded-lg bg-gray-800/70 border border-gray-600 text-white" />
-              <input type="number" name="kills" placeholder="Kills" value={form.kills || ''} onChange={handleChange} className="p-3 rounded-lg bg-gray-800/70 border border-gray-600 text-white" />
-              <input type="number" name="deaths" placeholder="Deaths" value={form.deaths || ''} onChange={handleChange} className="p-3 rounded-lg bg-gray-800/70 border border-gray-600 text-white" />
-              <input type="number" name="top_beast_might" placeholder="Top Beast Might" value={form.top_beast_might || ''} onChange={handleChange} className="p-3 rounded-lg bg-gray-800/70 border border-gray-600 text-white" />
-              <input type="number" name="top_hero_might" placeholder="Top Hero Might" value={form.top_hero_might || ''} onChange={handleChange} className="p-3 rounded-lg bg-gray-800/70 border border-gray-600 text-white" />
-            </div>
-            <div className="flex gap-3 mt-3">
-              <button onClick={handleSave} className="bg-blue-600 hover:bg-blue-700 px-6 py-2 rounded-lg font-semibold shadow-md transition-all">
-                {editingId ? 'Update' : 'Add'}
-              </button>
-              {editingId && (
-                <button onClick={handleCancel} className="bg-gray-500 hover:bg-gray-600 px-6 py-2 rounded-lg font-semibold shadow-md transition-all">
-                  Cancel
-                </button>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* Filters & Search */}
-        <div className="flex flex-wrap gap-3">
-          <input type="text" placeholder="🔍 Search by player..." value={search} onChange={e => setSearch(e.target.value)} className="p-3 rounded-lg bg-gray-800/70 border border-gray-600 text-white flex-1" />
-
-          <select value={troopFilter} onChange={e => setTroopFilter(e.target.value)} className="p-3 rounded-lg bg-gray-800/70 border border-gray-600 text-white">
-            <option value="">All Troop Types</option>
-            <option value="Infantry">Infantry</option>
-            <option value="Rider">Rider</option>
-            <option value="Ranged">Ranged</option>
-            <option value="Farm">Farm</option>
-          </select>
-
-          <select value={specFilter} onChange={e => setSpecFilter(e.target.value)} className="p-3 rounded-lg bg-gray-800/70 border border-gray-600 text-white">
-            <option value="">All Specializations</option>
-            <option value="Field">Field</option>
-            <option value="Rally">Rally</option>
-            <option value="Garrison">Garrison</option>
-            <option value="Mixed">Mixed</option>
-          </select>
         </div>
 
-        {/* Table */}
-        <div className="overflow-x-auto rounded-xl border border-gray-700 mt-3">
-          <table className="min-w-full text-white text-sm sm:text-base">
-            <thead className="bg-gray-700/80 text-white">
+        {/* Controls: search + filters in a responsive row */}
+        <div className="flex flex-col md:flex-row gap-3 items-center mb-4">
+          <input
+            type="text"
+            placeholder="Search name, email or IGG ID..."
+            value={search}
+            onChange={e => { setSearch(e.target.value); setPage(1); }}
+            className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 placeholder-gray-400"
+          />
+
+          <div className="flex gap-2 items-center">
+            <label className="text-sm text-gray-300 hidden sm:block">From</label>
+            <input type="date" value={dateFrom} onChange={e => { setDateFrom(e.target.value); setPage(1); }} className="bg-gray-800 border border-gray-700 rounded-lg px-2 py-2 text-sm" />
+            <label className="text-sm text-gray-300 hidden sm:block">To</label>
+            <input type="date" value={dateTo} onChange={e => { setDateTo(e.target.value); setPage(1); }} className="bg-gray-800 border border-gray-700 rounded-lg px-2 py-2 text-sm" />
+
+            <select value={troopFilter} onChange={e => { setTroopFilter(e.target.value); setPage(1); }} className="bg-gray-800 border border-gray-700 rounded-lg px-2 py-2 text-sm">
+              <option value="">All Troop Types</option>
+              <option value="Infantry">Infantry</option>
+              <option value="Rider">Rider</option>
+              <option value="Ranged">Ranged</option>
+              <option value="Farm">Farm</option>
+            </select>
+
+            <select value={roleFilter} onChange={e => { setRoleFilter(e.target.value); setPage(1); }} className="bg-gray-800 border border-gray-700 rounded-lg px-2 py-2 text-sm">
+              <option value="">All Roles</option>
+              <option value="admin">Admin</option>
+              <option value="member">Member</option>
+            </select>
+
+            <select value={sortField} onChange={e => setSortField(e.target.value)} className="bg-gray-800 border border-gray-700 rounded-lg px-2 py-2 text-sm">
+              <option value="full_name">Sort: Name</option>
+              <option value="created_at">Sort: Created</option>
+              <option value="might">Sort: Might</option>
+              <option value="battle_rating">Sort: Battle Rating</option>
+              <option value="email">Sort: Email</option>
+            </select>
+
+            <button onClick={() => setSortAsc(s => !s)} className="bg-gray-800 px-2 py-2 rounded text-sm">
+              {sortAsc ? 'Asc' : 'Desc'}
+            </button>
+          </div>
+        </div>
+
+        {/* Table (horizontal scroll on small screens) */}
+        <div className="overflow-x-auto rounded-lg border border-gray-700">
+          <table className="min-w-full text-sm">
+            <thead className="bg-gradient-to-r from-blue-600 to-purple-600 text-white">
               <tr>
-                <th className="p-3">Player</th>
-                <th className="p-3">IGG ID</th>
-                <th className="p-3">Troop Type</th>
-                <th className="p-3">Specialization</th>
-                <th className="p-3">Might</th>
-                <th className="p-3">Battle Rating</th>
-                <th className="p-3">Kills</th>
-                <th className="p-3">Deaths</th>
-                <th className="p-3">Top Beast Might</th>
-                <th className="p-3">Top Hero Might</th>
-                <th className="p-3">Actions</th>
+                {/* A selection of likely columns; since we `select('*')` we map available keys dynamically in the body */}
+                <th className="px-3 py-2 text-left">Player</th>
+                <th className="px-3 py-2 text-left">Email</th>
+                <th className="px-3 py-2 text-left">IGG ID</th>
+                <th className="px-3 py-2 text-left">Troop</th>
+                <th className="px-3 py-2 text-left">Role</th>
+                <th className="px-3 py-2 text-left">Might</th>
+                <th className="px-3 py-2 text-left">Battle Rating</th>
+                <th className="px-3 py-2 text-left">Can Login</th>
+                <th className="px-3 py-2 text-left">Created</th>
+                <th className="px-3 py-2 text-left">Actions</th>
               </tr>
             </thead>
-            <tbody>
-              {paginated.map(row => (
-                <tr key={row.id} className="border-t border-gray-700 hover:bg-gray-800/40 transition">
-                  <td className="p-3">{row.players?.full_name}</td>
-                  <td className="p-3">{row.players?.igg_id}</td>
-                  <td className="p-3">{row.troop_type}</td>
-                  <td className="p-3">{row.specialization}</td>
-                  <td className="p-3">{row.players?.might}</td>
-                  <td className="p-3">{row.battle_rating}</td>
-                  <td className="p-3">{row.kills}</td>
-                  <td className="p-3">{row.deaths}</td>
-                  <td className="p-3">{row.top_beast_might}</td>
-                  <td className="p-3">{row.top_hero_might}</td>
-                  <td className="p-3 flex flex-wrap justify-center gap-2">
-                    {role === 'admin' ? (
-                      <>
-                        <button onClick={() => handleEdit(row)} className="bg-yellow-400 hover:bg-yellow-500 text-black px-3 py-1 rounded transition">
-                          Edit
-                        </button>
-                        <button onClick={() => handleDelete(row.id)} className="bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded transition">
-                          Delete
-                        </button>
-                      </>
-                    ) : (
-                      <span className="text-gray-400 italic">View only</span>
-                    )}
-                  </td>
+            <tbody className="bg-gray-900">
+              {loading ? (
+                <tr>
+                  <td colSpan="10" className="px-4 py-6 text-center text-gray-400">Loading players...</td>
                 </tr>
-              ))}
+              ) : paginated.length === 0 ? (
+                <tr>
+                  <td colSpan="10" className="px-4 py-6 text-center text-gray-400">No players found.</td>
+                </tr>
+              ) : (
+                paginated.map(p => (
+                  <tr key={p.id} className="border-t border-gray-800 hover:bg-gray-800/40">
+                    <td className="px-3 py-2 min-w-[180px]">
+                      <div className="flex items-center gap-3">
+                        <img src={p.profile_image_url || '/default.png'} alt="" className="w-10 h-10 rounded-full object-cover" />
+                        <div>
+                          <div className="font-semibold">{p.full_name || '-'}</div>
+                          <div className="text-xs text-gray-400">{p.troop_type || ''}</div>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-3 py-2">{p.email || '-'}</td>
+                    <td className="px-3 py-2">{p.igg_id || '-'}</td>
+                    <td className="px-3 py-2">{p.troop_type || '-'}</td>
+                    <td className="px-3 py-2">{p.role || '-'}</td>
+                    <td className="px-3 py-2">{typeof p.might === 'number' ? p.might.toLocaleString() : (p.might || '-')}</td>
+                    <td className="px-3 py-2">{typeof p.battle_rating === 'number' ? p.battle_rating.toLocaleString() : (p.battle_rating || '-')}</td>
+                    <td className="px-3 py-2">{p.can_login ? '✅' : '❌'}</td>
+                    <td className="px-3 py-2 text-sm text-gray-300">{p.created_at ? new Date(p.created_at).toLocaleString() : '-'}</td>
+                    <td className="px-3 py-2">
+                      <div className="flex gap-2">
+                        <button onClick={() => openEdit(p)} className="bg-yellow-400 hover:bg-yellow-500 text-black px-3 py-1 rounded">Edit</button>
+                        <button onClick={() => handleDelete(p.id)} className="bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded">Delete</button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>
 
-        {/* Pagination */}
-        <div className="flex flex-wrap justify-between items-center mt-4 text-white">
-          <button
-            onClick={() => setPage(p => Math.max(p - 1, 1))}
-            className="px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded disabled:opacity-50"
-            disabled={page === 1}
-          >
-            Prev
-          </button>
-          <span>Page {page} of {totalPages}</span>
-          <button
-            onClick={() => setPage(p => Math.min(p + 1, totalPages))}
-            className="px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded disabled:opacity-50"
-            disabled={page === totalPages}
-          >
-            Next
-          </button>
+        {/* Pagination controls */}
+        <div className="flex items-center justify-between mt-4">
+          <div className="text-sm text-gray-300">Showing {filteredSorted.length === 0 ? 0 : (page - 1) * perPage + 1} - {Math.min(page * perPage, filteredSorted.length)} of {filteredSorted.length}</div>
+          <div className="flex items-center gap-2">
+            <button onClick={() => { setPage(1); }} disabled={page === 1} className="px-3 py-1 bg-gray-700 rounded disabled:opacity-50">First</button>
+            <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1} className="px-3 py-1 bg-gray-700 rounded disabled:opacity-50">Prev</button>
+            <span className="px-3 py-1 bg-gray-800 rounded">{page} / {totalPages}</span>
+            <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages} className="px-3 py-1 bg-gray-700 rounded disabled:opacity-50">Next</button>
+            <button onClick={() => setPage(totalPages)} disabled={page === totalPages} className="px-3 py-1 bg-gray-700 rounded disabled:opacity-50">Last</button>
+          </div>
         </div>
       </div>
+
+      {/* Edit Modal */}
+      {editingPlayer && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-70 p-4">
+          <div className="bg-gray-900 max-w-3xl w-full rounded-2xl p-5 border border-gray-700">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-xl font-semibold">Edit Player — {editingPlayer.full_name || editingPlayer.email}</h3>
+              <button onClick={closeEdit} className="text-gray-300 hover:text-white">✕</button>
+            </div>
+
+            {/* Form grid */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {/* We'll show common fields. If your players table has more, admins can extend this list */}
+              <label className="flex flex-col text-sm">
+                Full name
+                <input value={editForm.full_name ?? ''} onChange={e => onEditChange('full_name', e.target.value)} className="mt-1 p-2 rounded bg-gray-800 border border-gray-700" />
+              </label>
+
+              <label className="flex flex-col text-sm">
+                Email
+                <input value={editForm.email ?? ''} onChange={e => onEditChange('email', e.target.value)} className="mt-1 p-2 rounded bg-gray-800 border border-gray-700" />
+              </label>
+
+              <label className="flex flex-col text-sm">
+                IGG ID
+                <input value={editForm.igg_id ?? ''} onChange={e => onEditChange('igg_id', e.target.value)} className="mt-1 p-2 rounded bg-gray-800 border border-gray-700" />
+              </label>
+
+              <label className="flex flex-col text-sm">
+                Role
+                <select value={editForm.role ?? ''} onChange={e => onEditChange('role', e.target.value)} className="mt-1 p-2 rounded bg-gray-800 border border-gray-700">
+                  <option value="">(leave unchanged)</option>
+                  <option value="admin">admin</option>
+                  <option value="member">member</option>
+                </select>
+              </label>
+
+              <label className="flex flex-col text-sm">
+                Troop type
+                <input value={editForm.troop_type ?? ''} onChange={e => onEditChange('troop_type', e.target.value)} className="mt-1 p-2 rounded bg-gray-800 border border-gray-700" />
+              </label>
+
+              <label className="flex flex-col text-sm">
+                Can login
+                <select value={String(editForm.can_login ?? '')} onChange={e => onEditChange('can_login', e.target.value)} className="mt-1 p-2 rounded bg-gray-800 border border-gray-700">
+                  <option value="">(leave unchanged)</option>
+                  <option value="true">true</option>
+                  <option value="false">false</option>
+                </select>
+              </label>
+
+              <label className="flex flex-col text-sm">
+                Might
+                <input type="number" value={editForm.might ?? ''} onChange={e => onEditChange('might', e.target.value)} className="mt-1 p-2 rounded bg-gray-800 border border-gray-700" />
+              </label>
+
+              <label className="flex flex-col text-sm">
+                Battle Rating
+                <input type="number" value={editForm.battle_rating ?? ''} onChange={e => onEditChange('battle_rating', e.target.value)} className="mt-1 p-2 rounded bg-gray-800 border border-gray-700" />
+              </label>
+
+              <label className="flex flex-col text-sm md:col-span-2">
+                Profile Image URL
+                <input value={editForm.profile_image_url ?? ''} onChange={e => onEditChange('profile_image_url', e.target.value)} className="mt-1 p-2 rounded bg-gray-800 border border-gray-700" />
+              </label>
+
+              {/* Additional arbitrary JSON or specialist fields could be exposed similarly */}
+            </div>
+
+            <div className="flex items-center gap-3 justify-end mt-4">
+              <button onClick={closeEdit} className="px-4 py-2 bg-gray-700 rounded">Cancel</button>
+              <button onClick={handleSave} disabled={saving} className="px-4 py-2 bg-blue-600 rounded">
+                {saving ? 'Saving...' : 'Save changes'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
