@@ -15,6 +15,9 @@ export default function Login() {
   const [resetMsg, setResetMsg] = useState('');
   const [resetLoading, setResetLoading] = useState(false);
 
+  // Toast state
+  const [toast, setToast] = useState({ show: false, message: '', type: 'success' });
+
   useEffect(() => {
     const checkSession = async () => {
       const { data: { session } } = await supabase.auth.getSession();
@@ -23,16 +26,22 @@ export default function Login() {
     checkSession();
   }, [router]);
 
+  // 🔹 Toast helper
+  const showToast = (message, type = 'success', duration = 3000) => {
+    setToast({ show: true, message, type });
+    setTimeout(() => setToast({ show: false, message: '', type }), duration);
+  };
+
   // 🔹 Log login attempts to audit table
-  const logLoginEvent = async (user, success, message = '') => {
+  const logLoginEvent = async (success, message = '') => {
     try {
       const ip = await fetch('https://api.ipify.org?format=json')
         .then(r => r.json())
         .catch(() => ({ ip: 'Unknown' }));
 
       await supabase.from('login_audit_logs').insert({
-        user_id: user?.id || null,
-        email: user?.email || email,
+        user_id: null,
+        email,
         ip_address: ip?.ip || 'Unknown',
         user_agent: navigator.userAgent,
         success,
@@ -49,7 +58,6 @@ export default function Login() {
     setErrorMsg('');
 
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-
     setLoading(false);
 
     if (error) {
@@ -58,8 +66,8 @@ export default function Login() {
         : error.message;
 
       setErrorMsg(msg);
-      await logLoginEvent(null, false, msg);
-      console.error('Login error:', error);
+      await logLoginEvent(false, msg);
+      showToast(msg, 'error');
       return;
     }
 
@@ -67,16 +75,19 @@ export default function Login() {
       if (!data.user.email_confirmed_at) {
         const msg = 'Your email is not confirmed yet. Check your inbox.';
         setErrorMsg(msg);
-        await logLoginEvent(data.user, false, msg);
+        await logLoginEvent(false, msg);
+        showToast(msg, 'error');
         return;
       }
 
-      await logLoginEvent(data.user, true, 'Login successful');
+      await logLoginEvent(true, 'Login successful');
+      showToast('Login successful!', 'success');
       router.push('/profile');
     } else {
       const msg = 'Login failed. Please check your credentials.';
       setErrorMsg(msg);
-      await logLoginEvent(null, false, msg);
+      await logLoginEvent(false, msg);
+      showToast(msg, 'error');
     }
   };
 
@@ -94,14 +105,27 @@ export default function Login() {
     if (error) {
       console.error('Password reset error:', error);
       setResetMsg('❌ ' + error.message);
+      showToast(error.message, 'error');
     } else {
       setResetMsg('✅ Password reset email sent! Check your inbox.');
       setResetEmail('');
+      showToast('Password reset email sent!', 'success');
     }
   };
 
   return (
-    <div className="flex items-center justify-center min-h-screen bg-gradient-to-b from-gray-900 to-gray-800 px-4 relative">
+    <div className="relative flex items-center justify-center min-h-screen bg-gradient-to-b from-gray-900 to-gray-800 px-4">
+      {/* 🔹 Toast Notifications */}
+      {toast.show && (
+        <div
+          className={`fixed top-5 left-1/2 transform -translate-x-1/2 px-6 py-3 rounded-xl shadow-lg text-white font-semibold z-50 transition-all duration-300 ${
+            toast.type === 'success' ? 'bg-green-500' : 'bg-red-500'
+          }`}
+        >
+          {toast.message}
+        </div>
+      )}
+
       {/* 🔒 Reset Password Modal */}
       {showReset && (
         <div className="absolute inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50">
