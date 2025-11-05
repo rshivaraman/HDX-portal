@@ -25,7 +25,7 @@ export default function EventManagement() {
     setRole(data.role);
   };
 
-  // Fetch events (LEFT JOIN)
+  // Fetch events with thresholds
   const fetchEvents = async () => {
     const { data, error } = await supabase
       .from('events')
@@ -35,8 +35,11 @@ export default function EventManagement() {
       `)
       .order(sortField, { ascending: sortOrder === 'asc' });
 
-    if (error) console.error('Error fetching events:', error);
-    else setEvents(data || []);
+    if (error) {
+      console.error('Error fetching events:', error);
+    } else {
+      setEvents(data || []);
+    }
   };
 
   useEffect(() => {
@@ -54,7 +57,7 @@ export default function EventManagement() {
 
   const handleEdit = (ev) => {
     if (role !== 'admin') return;
-    setEditingEvent(ev.id);
+    setEditingEvent(ev);
     setForm({
       event_name: ev.event_thresholds?.event_name || ev.name,
       min_participation: ev.event_thresholds?.min_participation || 1,
@@ -70,73 +73,86 @@ export default function EventManagement() {
     setForm({});
   };
 
-  // ✅ Fixed handleSave() - ensures updated_at field handled safely and min_participation editable
+  // Save / Update Event & Threshold
   const handleSave = async () => {
     if (role !== 'admin') return alert('Not authorized');
     try {
-      // Ensure fields are clean
-      const thresholdPayload = {
-        event_name: form.event_name,
-        min_participation: Number(form.min_participation),
-        min_score: Number(form.min_score),
-        season: form.season,
-        description: form.description,
-      };
+      let thresholdId = null;
 
-      // Check if this threshold already exists
-      const { data: existingThreshold } = await supabase
-        .from('event_thresholds')
-        .select('id')
-        .eq('event_name', form.event_name)
-        .maybeSingle();
-
-      let thresholdId = existingThreshold?.id;
-
-      if (thresholdId) {
-        // ✅ Update existing record
-        const { error: tError } = await supabase
-          .from('event_thresholds')
-          .update(thresholdPayload)
-          .eq('id', thresholdId);
-        if (tError) throw tError;
-      } else {
-        // ✅ Insert new record
-        const { data: newThreshold, error: insertError } = await supabase
-          .from('event_thresholds')
-          .insert([thresholdPayload])
-          .select()
-          .single();
-        if (insertError) throw insertError;
-        thresholdId = newThreshold.id;
-      }
-
-      // ✅ Update or insert event record
       if (editingEvent) {
+        // Existing threshold
+        thresholdId = editingEvent.event_thresholds?.id;
+
+        if (thresholdId) {
+          const { error: tError } = await supabase
+            .from('event_thresholds')
+            .update({
+              event_name: form.event_name,
+              min_participation: Number(form.min_participation),
+              min_score: Number(form.min_score),
+              season: form.season,
+              description: form.description,
+              updated_at: new Date()
+            })
+            .eq('id', thresholdId);
+          if (tError) throw tError;
+        } else {
+          // No threshold exists, insert new
+          const { data: thresholdData, error: tError } = await supabase
+            .from('event_thresholds')
+            .insert([{
+              event_name: form.event_name,
+              min_participation: Number(form.min_participation),
+              min_score: Number(form.min_score),
+              season: form.season,
+              description: form.description
+            }])
+            .select()
+            .single();
+          if (tError) throw tError;
+          thresholdId = thresholdData.id;
+        }
+
+        // Update event
         const { error: updateError } = await supabase
           .from('events')
           .update({
             name: form.event_name,
             event_date: form.event_date,
-            event_threshold_id: thresholdId,
+            event_threshold_id: thresholdId
           })
-          .eq('id', editingEvent);
+          .eq('id', editingEvent.id);
         if (updateError) throw updateError;
+
       } else {
+        // New threshold
+        const { data: thresholdData, error: tError } = await supabase
+          .from('event_thresholds')
+          .insert([{
+            event_name: form.event_name,
+            min_participation: Number(form.min_participation),
+            min_score: Number(form.min_score),
+            season: form.season,
+            description: form.description
+          }])
+          .select()
+          .single();
+        if (tError) throw tError;
+        thresholdId = thresholdData.id;
+
+        // New event
         const { error: insertError } = await supabase
           .from('events')
-          .insert([
-            {
-              name: form.event_name,
-              event_date: form.event_date,
-              event_threshold_id: thresholdId,
-            },
-          ]);
+          .insert([{
+            name: form.event_name,
+            event_date: form.event_date,
+            event_threshold_id: thresholdId
+          }]);
         if (insertError) throw insertError;
       }
 
-      await new Promise((r) => setTimeout(r, 300));
-      await fetchEvents();
       handleCancel();
+      await fetchEvents();
     } catch (err) {
       console.error('Error saving event:', err);
       alert('Error saving event');
@@ -150,7 +166,7 @@ export default function EventManagement() {
     fetchEvents();
   };
 
-  // Filtering + sorting
+  // Filtering + Searching
   let filtered = events
     .filter((ev) => {
       const name = (ev.event_thresholds?.event_name || ev.name || '').toLowerCase();
@@ -170,12 +186,7 @@ export default function EventManagement() {
   const totalPages = Math.ceil(filtered.length / perPage);
   const displayed = filtered.slice((page - 1) * perPage, page * perPage);
 
-  if (loading)
-    return (
-      <div className="flex justify-center items-center h-screen text-white text-lg">
-        Loading...
-      </div>
-    );
+  if (loading) return <div className="flex justify-center items-center h-screen text-white text-lg">Loading...</div>;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-black to-gray-800 py-10 px-4 text-white">
@@ -190,7 +201,6 @@ export default function EventManagement() {
           </div>
         )}
 
-        {/* Add/Edit Form */}
         {role === 'admin' && (
           <div className="mb-6 p-6 border border-gray-700 rounded-2xl bg-black/30 shadow-inner space-y-4">
             <h3 className="font-semibold text-lg">{editingEvent ? 'Edit Event' : 'Add New Event'}</h3>
@@ -219,9 +229,8 @@ export default function EventManagement() {
                 <input
                   type="number"
                   name="min_participation"
-                  value={form.min_participation ?? 1}
+                  value={form.min_participation ?? ''}
                   onChange={handleChange}
-                  min="1"
                   className="p-3 rounded-lg bg-gray-800/70 border border-gray-600 text-white"
                 />
               </div>
@@ -230,9 +239,8 @@ export default function EventManagement() {
                 <input
                   type="number"
                   name="min_score"
-                  value={form.min_score ?? 1000}
+                  value={form.min_score || 1000}
                   onChange={handleChange}
-                  min="0"
                   className="p-3 rounded-lg bg-gray-800/70 border border-gray-600 text-white"
                 />
               </div>
@@ -274,7 +282,7 @@ export default function EventManagement() {
           </div>
         )}
 
-        {/* Filters */}
+        {/* Filters & Search */}
         <div className="flex flex-wrap gap-3 mb-4">
           <input
             type="text"
@@ -303,10 +311,10 @@ export default function EventManagement() {
                       key={i}
                       className="px-4 py-2 cursor-pointer"
                       onClick={() => {
-                        const field = col.toLowerCase().replace(/ /g, '_');
-                        if (sortField === field) setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
-                        else {
-                          setSortField(field);
+                        if (sortField === col.toLowerCase().replace(/ /g, '_')) {
+                          setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+                        } else {
+                          setSortField(col.toLowerCase().replace(/ /g, '_'));
                           setSortOrder('asc');
                         }
                       }}
