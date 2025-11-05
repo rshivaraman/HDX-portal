@@ -25,16 +25,18 @@ export default function EventManagement() {
     setRole(data.role);
   };
 
-  // Fetch events + thresholds
+  // Fetch events (LEFT JOIN)
   const fetchEvents = async () => {
     const { data, error } = await supabase
       .from('events')
       .select(`
         id, name, event_date, event_threshold_id,
-        event_thresholds!inner(id, event_name, min_participation, min_score, description, season)
+        event_thresholds(id, event_name, min_participation, min_score, description, season)
       `)
       .order(sortField, { ascending: sortOrder === 'asc' });
-    if (!error) setEvents(data || []);
+
+    if (error) console.error('Error fetching events:', error);
+    else setEvents(data || []);
   };
 
   useEffect(() => {
@@ -59,7 +61,7 @@ export default function EventManagement() {
       min_score: ev.event_thresholds?.min_score || 1000,
       season: ev.event_thresholds?.season || '',
       description: ev.event_thresholds?.description || '',
-      event_date: ev.event_date?.toString().substring(0,10)
+      event_date: ev.event_date?.toString().substring(0, 10)
     });
   };
 
@@ -68,38 +70,75 @@ export default function EventManagement() {
     setForm({});
   };
 
+  // ✅ Fixed handleSave() - ensures updated_at field handled safely and min_participation editable
   const handleSave = async () => {
     if (role !== 'admin') return alert('Not authorized');
     try {
-      const { data: thresholdData, error: tError } = await supabase.from('event_thresholds').upsert([{
+      // Ensure fields are clean
+      const thresholdPayload = {
         event_name: form.event_name,
         min_participation: Number(form.min_participation),
         min_score: Number(form.min_score),
         season: form.season,
-        description: form.description
-      }]).select();
+        description: form.description,
+      };
 
-      if (tError) throw tError;
-      const thresholdId = thresholdData[0].id;
+      // Check if this threshold already exists
+      const { data: existingThreshold } = await supabase
+        .from('event_thresholds')
+        .select('id')
+        .eq('event_name', form.event_name)
+        .maybeSingle();
 
-      if (editingEvent) {
-        await supabase.from('events').update({
-          name: form.event_name,
-          event_date: form.event_date,
-          event_threshold_id: thresholdId
-        }).eq('id', editingEvent);
+      let thresholdId = existingThreshold?.id;
+
+      if (thresholdId) {
+        // ✅ Update existing record
+        const { error: tError } = await supabase
+          .from('event_thresholds')
+          .update(thresholdPayload)
+          .eq('id', thresholdId);
+        if (tError) throw tError;
       } else {
-        await supabase.from('events').insert([{
-          name: form.event_name,
-          event_date: form.event_date,
-          event_threshold_id: thresholdId
-        }]);
+        // ✅ Insert new record
+        const { data: newThreshold, error: insertError } = await supabase
+          .from('event_thresholds')
+          .insert([thresholdPayload])
+          .select()
+          .single();
+        if (insertError) throw insertError;
+        thresholdId = newThreshold.id;
       }
 
+      // ✅ Update or insert event record
+      if (editingEvent) {
+        const { error: updateError } = await supabase
+          .from('events')
+          .update({
+            name: form.event_name,
+            event_date: form.event_date,
+            event_threshold_id: thresholdId,
+          })
+          .eq('id', editingEvent);
+        if (updateError) throw updateError;
+      } else {
+        const { error: insertError } = await supabase
+          .from('events')
+          .insert([
+            {
+              name: form.event_name,
+              event_date: form.event_date,
+              event_threshold_id: thresholdId,
+            },
+          ]);
+        if (insertError) throw insertError;
+      }
+
+      await new Promise((r) => setTimeout(r, 300));
+      await fetchEvents();
       handleCancel();
-      fetchEvents();
     } catch (err) {
-      console.error(err);
+      console.error('Error saving event:', err);
       alert('Error saving event');
     }
   };
@@ -111,29 +150,39 @@ export default function EventManagement() {
     fetchEvents();
   };
 
-  // Filtering + searching
-  let filtered = events.filter(ev => {
-    const name = (ev.event_thresholds?.event_name || ev.name || '').toLowerCase();
-    const season = (ev.event_thresholds?.season || '').toLowerCase();
-    const fn = (filters.event_name || search).toLowerCase();
-    const fs = (filters.season || search).toLowerCase();
-    return name.includes(fn) && season.includes(fs);
-  }).sort((a, b) => {
-    const valA = a[sortField] || '';
-    const valB = b[sortField] || '';
-    if (typeof valA === 'string') return sortOrder === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
-    return sortOrder === 'asc' ? valA - valB : valB - valA;
-  });
+  // Filtering + sorting
+  let filtered = events
+    .filter((ev) => {
+      const name = (ev.event_thresholds?.event_name || ev.name || '').toLowerCase();
+      const season = (ev.event_thresholds?.season || '').toLowerCase();
+      const fn = (filters.event_name || search).toLowerCase();
+      const fs = (filters.season || search).toLowerCase();
+      return name.includes(fn) && season.includes(fs);
+    })
+    .sort((a, b) => {
+      const valA = a[sortField] || '';
+      const valB = b[sortField] || '';
+      if (typeof valA === 'string')
+        return sortOrder === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
+      return sortOrder === 'asc' ? valA - valB : valB - valA;
+    });
 
   const totalPages = Math.ceil(filtered.length / perPage);
   const displayed = filtered.slice((page - 1) * perPage, page * perPage);
 
-  if (loading) return <div className="flex justify-center items-center h-screen text-white text-lg">Loading...</div>;
+  if (loading)
+    return (
+      <div className="flex justify-center items-center h-screen text-white text-lg">
+        Loading...
+      </div>
+    );
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-black to-gray-800 py-10 px-4 text-white">
       <div className="max-w-7xl mx-auto bg-black/40 p-6 rounded-2xl shadow-2xl border border-white/20 space-y-6">
-        <h2 className="text-3xl font-bold text-center bg-gradient-to-r from-blue-400 to-purple-500 bg-clip-text text-transparent">Event Management</h2>
+        <h2 className="text-3xl font-bold text-center bg-gradient-to-r from-blue-400 to-purple-500 bg-clip-text text-transparent">
+          Event Management
+        </h2>
 
         {role === 'member' && (
           <div className="bg-gray-800/70 border border-yellow-600 p-3 rounded-lg text-yellow-400 text-center">
@@ -148,35 +197,76 @@ export default function EventManagement() {
             <div className="grid md:grid-cols-2 gap-4">
               <div className="flex flex-col">
                 <label className="mb-1 text-gray-300">Event Name</label>
-                <input name="event_name" value={form.event_name || ''} onChange={handleChange} className="p-3 rounded-lg bg-gray-800/70 border border-gray-600 text-white"/>
+                <input
+                  name="event_name"
+                  value={form.event_name || ''}
+                  onChange={handleChange}
+                  className="p-3 rounded-lg bg-gray-800/70 border border-gray-600 text-white"
+                />
               </div>
               <div className="flex flex-col">
                 <label className="mb-1 text-gray-300">Event Date</label>
-                <input type="date" name="event_date" value={form.event_date || ''} onChange={handleChange} className="p-3 rounded-lg bg-gray-800/70 border border-gray-600 text-white"/>
+                <input
+                  type="date"
+                  name="event_date"
+                  value={form.event_date || ''}
+                  onChange={handleChange}
+                  className="p-3 rounded-lg bg-gray-800/70 border border-gray-600 text-white"
+                />
               </div>
               <div className="flex flex-col">
                 <label className="mb-1 text-gray-300">Minimum Participation</label>
-                <input type="number" name="min_participation" value={form.min_participation || 1} onChange={handleChange} className="p-3 rounded-lg bg-gray-800/70 border border-gray-600 text-white"/>
+                <input
+                  type="number"
+                  name="min_participation"
+                  value={form.min_participation ?? 1}
+                  onChange={handleChange}
+                  min="1"
+                  className="p-3 rounded-lg bg-gray-800/70 border border-gray-600 text-white"
+                />
               </div>
               <div className="flex flex-col">
                 <label className="mb-1 text-gray-300">Minimum Score</label>
-                <input type="number" name="min_score" value={form.min_score || 1000} onChange={handleChange} className="p-3 rounded-lg bg-gray-800/70 border border-gray-600 text-white"/>
+                <input
+                  type="number"
+                  name="min_score"
+                  value={form.min_score ?? 1000}
+                  onChange={handleChange}
+                  min="0"
+                  className="p-3 rounded-lg bg-gray-800/70 border border-gray-600 text-white"
+                />
               </div>
               <div className="flex flex-col">
                 <label className="mb-1 text-gray-300">Season</label>
-                <input name="season" value={form.season || ''} onChange={handleChange} className="p-3 rounded-lg bg-gray-800/70 border border-gray-600 text-white"/>
+                <input
+                  name="season"
+                  value={form.season || ''}
+                  onChange={handleChange}
+                  className="p-3 rounded-lg bg-gray-800/70 border border-gray-600 text-white"
+                />
               </div>
               <div className="flex flex-col">
                 <label className="mb-1 text-gray-300">Description</label>
-                <input name="description" value={form.description || ''} onChange={handleChange} className="p-3 rounded-lg bg-gray-800/70 border border-gray-600 text-white"/>
+                <input
+                  name="description"
+                  value={form.description || ''}
+                  onChange={handleChange}
+                  className="p-3 rounded-lg bg-gray-800/70 border border-gray-600 text-white"
+                />
               </div>
             </div>
             <div className="flex gap-3 mt-4">
-              <button onClick={handleSave} className="bg-blue-600 hover:bg-blue-700 py-2 px-5 rounded-lg font-semibold shadow-md">
+              <button
+                onClick={handleSave}
+                className="bg-blue-600 hover:bg-blue-700 py-2 px-5 rounded-lg font-semibold shadow-md"
+              >
                 {editingEvent ? 'Update' : 'Add'}
               </button>
               {editingEvent && (
-                <button onClick={handleCancel} className="bg-gray-500 hover:bg-gray-600 py-2 px-5 rounded-lg font-semibold shadow-md">
+                <button
+                  onClick={handleCancel}
+                  className="bg-gray-500 hover:bg-gray-600 py-2 px-5 rounded-lg font-semibold shadow-md"
+                >
                   Cancel
                 </button>
               )}
@@ -184,20 +274,20 @@ export default function EventManagement() {
           </div>
         )}
 
-        {/* Filters & Search */}
+        {/* Filters */}
         <div className="flex flex-wrap gap-3 mb-4">
           <input
             type="text"
             placeholder="Search by event name..."
             value={search}
-            onChange={e => setSearch(e.target.value)}
+            onChange={(e) => setSearch(e.target.value)}
             className="flex-1 bg-gray-800 border border-gray-600 p-3 rounded-lg text-white"
           />
           <input
             type="text"
             placeholder="Filter by season..."
             value={filters.season}
-            onChange={e => setFilters({ ...filters, season: e.target.value })}
+            onChange={(e) => setFilters({ ...filters, season: e.target.value })}
             className="bg-gray-800 border border-gray-600 p-3 rounded-lg text-white"
           />
         </div>
@@ -207,25 +297,31 @@ export default function EventManagement() {
           <table className="min-w-full text-sm text-gray-300">
             <thead className="bg-gradient-to-r from-blue-600 to-purple-600 text-white">
               <tr>
-                {['Event', 'Date', 'Min Participation', 'Min Score', 'Season', 'Description', 'Actions'].map((col, i) => (
-                  <th key={i} className="px-4 py-2 cursor-pointer" onClick={() => {
-                    if (sortField === col.toLowerCase().replace(/ /g, '_')) {
-                      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
-                    } else {
-                      setSortField(col.toLowerCase().replace(/ /g, '_'));
-                      setSortOrder('asc');
-                    }
-                  }}>
-                    {col}
-                    {sortField === col.toLowerCase().replace(/ /g, '_') && (
-                      <span className="ml-1">{sortOrder === 'asc' ? '↑' : '↓'}</span>
-                    )}
-                  </th>
-                ))}
+                {['Event', 'Date', 'Min Participation', 'Min Score', 'Season', 'Description', 'Actions'].map(
+                  (col, i) => (
+                    <th
+                      key={i}
+                      className="px-4 py-2 cursor-pointer"
+                      onClick={() => {
+                        const field = col.toLowerCase().replace(/ /g, '_');
+                        if (sortField === field) setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+                        else {
+                          setSortField(field);
+                          setSortOrder('asc');
+                        }
+                      }}
+                    >
+                      {col}
+                      {sortField === col.toLowerCase().replace(/ /g, '_') && (
+                        <span className="ml-1">{sortOrder === 'asc' ? '↑' : '↓'}</span>
+                      )}
+                    </th>
+                  )
+                )}
               </tr>
             </thead>
             <tbody>
-              {displayed.map(ev => (
+              {displayed.map((ev) => (
                 <tr key={ev.id} className="hover:bg-gray-800 border-t border-gray-700 transition-all">
                   <td className="px-4 py-2">{ev.event_thresholds?.event_name || ev.name}</td>
                   <td className="px-4 py-2">{ev.event_date}</td>
@@ -257,7 +353,9 @@ export default function EventManagement() {
               ))}
               {displayed.length === 0 && (
                 <tr>
-                  <td colSpan="7" className="text-center py-6 text-gray-400 italic">No records found.</td>
+                  <td colSpan="7" className="text-center py-6 text-gray-400 italic">
+                    No records found.
+                  </td>
                 </tr>
               )}
             </tbody>
@@ -287,4 +385,4 @@ export default function EventManagement() {
       </div>
     </div>
   );
-  }
+}
