@@ -8,15 +8,23 @@ export default function Login() {
   const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [remember, setRemember] = useState(false);
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [showReset, setShowReset] = useState(false);
   const [resetEmail, setResetEmail] = useState('');
   const [resetMsg, setResetMsg] = useState('');
   const [resetLoading, setResetLoading] = useState(false);
-
-  // Toast state
   const [toast, setToast] = useState({ show: false, message: '', type: 'success' });
+
+  // Load remembered email
+  useEffect(() => {
+    const savedEmail = localStorage.getItem('rememberedEmail');
+    if (savedEmail) {
+      setEmail(savedEmail);
+      setRemember(true);
+    }
+  }, []);
 
   useEffect(() => {
     const checkSession = async () => {
@@ -26,23 +34,22 @@ export default function Login() {
     checkSession();
   }, [router]);
 
-  // 🔹 Toast helper
   const showToast = (message, type = 'success', duration = 3000) => {
     setToast({ show: true, message, type });
     setTimeout(() => setToast({ show: false, message: '', type }), duration);
   };
 
   // 🔹 Log login attempts to audit table
-  const logLoginEvent = async (success, message = '') => {
+  const logLoginEvent = async (success, message = '', playerData = {}) => {
     try {
-      const ip = await fetch('https://api.ipify.org?format=json')
+      const ipData = await fetch('https://api.ipify.org?format=json')
         .then(r => r.json())
         .catch(() => ({ ip: 'Unknown' }));
 
       await supabase.from('login_audit_logs').insert({
-        user_id: null,
-        email,
-        ip_address: ip?.ip || 'Unknown',
+        user_id: playerData?.user_id || null,
+        email: playerData?.email || email,
+        ip_address: ipData?.ip || 'Unknown',
         user_agent: navigator.userAgent,
         success,
         message,
@@ -64,7 +71,6 @@ export default function Login() {
       const msg = error.message.includes('Email not confirmed')
         ? 'Please confirm your email before logging in.'
         : error.message;
-
       setErrorMsg(msg);
       await logLoginEvent(false, msg);
       showToast(msg, 'error');
@@ -80,7 +86,21 @@ export default function Login() {
         return;
       }
 
-      await logLoginEvent(true, 'Login successful');
+      // Remember username if checked
+      if (remember) {
+        localStorage.setItem('rememberedEmail', email);
+      } else {
+        localStorage.removeItem('rememberedEmail');
+      }
+
+      // Get player info
+      const { data: playerData } = await supabase
+        .from('players')
+        .select('id, email, player_name, igg_id, country, user_id')
+        .eq('email', email)
+        .single();
+
+      await logLoginEvent(true, 'Login successful', playerData || {});
       showToast('Login successful!', 'success');
       router.push('/profile');
     } else {
@@ -101,7 +121,6 @@ export default function Login() {
     });
 
     setResetLoading(false);
-
     if (error) {
       console.error('Password reset error:', error);
       setResetMsg('❌ ' + error.message);
@@ -115,7 +134,7 @@ export default function Login() {
 
   return (
     <div className="relative flex items-center justify-center min-h-screen bg-gradient-to-b from-gray-900 to-gray-800 px-4">
-      {/* 🔹 Toast Notifications */}
+      {/* Toast */}
       {toast.show && (
         <div
           className={`fixed top-5 left-1/2 transform -translate-x-1/2 px-6 py-3 rounded-xl shadow-lg text-white font-semibold z-50 transition-all duration-300 ${
@@ -126,7 +145,7 @@ export default function Login() {
         </div>
       )}
 
-      {/* 🔒 Reset Password Modal */}
+      {/* Reset Password Modal */}
       {showReset && (
         <div className="absolute inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50">
           <div className="bg-gray-900 w-full max-w-md rounded-2xl shadow-xl p-6 text-center relative">
@@ -172,7 +191,7 @@ export default function Login() {
         </div>
       )}
 
-      {/* 🔹 Login Card */}
+      {/* Login Card */}
       <div className="bg-gray-900 w-full max-w-md rounded-2xl shadow-2xl p-8 flex flex-col items-center">
         <Image
           src="/logo.png"
@@ -203,6 +222,17 @@ export default function Login() {
             className="w-full px-4 py-3 rounded-xl border border-gray-700 bg-gray-800 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-400 transition"
           />
 
+          {/* Remember Me */}
+          <label className="flex items-center gap-2 text-gray-400 text-sm mt-1 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={remember}
+              onChange={(e) => setRemember(e.target.checked)}
+              className="form-checkbox h-4 w-4 text-blue-500 rounded border-gray-600 focus:ring-blue-400"
+            />
+            Remember my email
+          </label>
+
           <button
             type="submit"
             disabled={loading}
@@ -225,7 +255,7 @@ export default function Login() {
         </p>
 
         <p className="text-gray-400 text-sm mt-2 text-center">
-          Don't have an account?{' '}
+          Don’t have an account?{' '}
           <a href="/signup" className="text-blue-400 hover:text-blue-500 font-semibold">
             Sign Up
           </a>
