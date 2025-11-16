@@ -37,7 +37,7 @@ export default function LoginLogs() {
       if (emails.length > 0) {
         const { data: players } = await supabase
           .from('players')
-          .select('email, full_name, igg_id')
+          .select('email, full_name, igg_id, profile_image_url')
           .in('email', emails);
         playersData = players || [];
       }
@@ -49,6 +49,7 @@ export default function LoginLogs() {
           ...log,
           full_name: player?.full_name || '-',
           igg_id: player?.igg_id || '-',
+          profile_image_url: player?.profile_image_url || null,
         };
       });
 
@@ -62,6 +63,18 @@ export default function LoginLogs() {
       setFilteredLogs([]);
     }
     setLoading(false);
+  };
+
+  // Mask email function
+  const maskEmail = (email) => {
+    if (!email) return '-';
+    const [user, domain] = email.split('@');
+    if (!domain) {
+      if (user.length <= 2) return user[0] + '*';
+      return user[0] + '*'.repeat(user.length - 2) + user.slice(-1);
+    }
+    const maskedUser = user.length <= 2 ? user[0] + '*' : user[0] + '*'.repeat(user.length - 2) + user.slice(-1);
+    return maskedUser + '@' + domain;
   };
 
   // Filter, search, and sort
@@ -129,7 +142,7 @@ export default function LoginLogs() {
   const paginatedLogs = filteredLogs.slice((page - 1) * perPage, page * perPage);
 
   return (
-    <div className="min-h-screen p-4 bg-gradient-to-b from-gray-900 to-gray-800 text-white">
+    <div className="min-h-screen p-4 bg-gradient-to-br from-gray-900 to-gray-800 text-white">
       <div className="max-w-7xl mx-auto">
         <h1 className="text-3xl font-bold text-center text-blue-400 mb-6 tracking-wide">
           📊 Login Audit Logs
@@ -137,7 +150,6 @@ export default function LoginLogs() {
 
         {/* Filters / Controls */}
         <div className="flex flex-col md:flex-row md:items-end md:gap-4 mb-4 flex-wrap">
-          {/* Search */}
           <div className="flex-1 min-w-[200px]">
             <label className="block text-gray-300 text-sm mb-1">Search</label>
             <input
@@ -149,7 +161,6 @@ export default function LoginLogs() {
             />
           </div>
 
-          {/* Status */}
           <div className="min-w-[140px] mt-2 md:mt-0">
             <label className="block text-gray-300 text-sm mb-1">Status</label>
             <select
@@ -163,7 +174,6 @@ export default function LoginLogs() {
             </select>
           </div>
 
-          {/* Date From */}
           <div className="min-w-[160px] mt-2 md:mt-0">
             <label className="block text-gray-300 text-sm mb-1">From</label>
             <input
@@ -174,7 +184,6 @@ export default function LoginLogs() {
             />
           </div>
 
-          {/* Date To */}
           <div className="min-w-[160px] mt-2 md:mt-0">
             <label className="block text-gray-300 text-sm mb-1">To</label>
             <input
@@ -185,7 +194,6 @@ export default function LoginLogs() {
             />
           </div>
 
-          {/* Sort Button */}
           <div className="mt-2 md:mt-0">
             <label className="block text-gray-300 text-sm mb-1">&nbsp;</label>
             <button
@@ -198,14 +206,14 @@ export default function LoginLogs() {
         </div>
 
         {/* Table */}
-        <div className="overflow-x-auto rounded-lg border border-gray-700 shadow-lg bg-gray-900">
+        <div className="overflow-x-auto rounded-xl border border-gray-700 shadow-lg bg-gray-900">
           <table className="min-w-full divide-y divide-gray-700">
             <thead className="bg-gray-800">
               <tr>
+                <th className="px-4 py-2 text-left text-sm font-semibold">Player</th>
                 <th className="px-4 py-2 text-left text-sm font-semibold">Email</th>
-                <th className="px-4 py-2 text-left text-sm font-semibold">Player Name</th>
                 <th className="px-4 py-2 text-left text-sm font-semibold">IGG ID</th>
-                <th className="px-4 py-2 text-left text-sm font-semibold">IP Address</th>
+                <th className="px-4 py-2 text-left text-sm font-semibold">IP</th>
                 <th className="px-4 py-2 text-left text-sm font-semibold">User Agent</th>
                 <th className="px-4 py-2 text-left text-sm font-semibold">Status</th>
                 <th className="px-4 py-2 text-left text-sm font-semibold">Message</th>
@@ -215,27 +223,32 @@ export default function LoginLogs() {
             <tbody className="divide-y divide-gray-700">
               {loading ? (
                 <tr>
-                  <td colSpan="8" className="px-4 py-4 text-center text-gray-400">
-                    Loading...
-                  </td>
+                  <td colSpan="8" className="px-4 py-4 text-center text-gray-400">Loading...</td>
                 </tr>
               ) : paginatedLogs.length === 0 ? (
                 <tr>
-                  <td colSpan="8" className="px-4 py-4 text-center text-gray-400">
-                    No logs found.
-                  </td>
+                  <td colSpan="8" className="px-4 py-4 text-center text-gray-400">No logs found.</td>
                 </tr>
               ) : (
                 paginatedLogs.map((log) => (
                   <tr
                     key={log.id}
-                    className={`${
-                      log.success ? 'bg-green-900 hover:bg-green-800' : 'bg-red-900 hover:bg-red-800'
-                    } transition-colors`}
+                    className={`transition-colors ${log.success ? 'bg-green-900 hover:bg-green-800' : 'bg-red-900 hover:bg-red-800'}`}
                   >
-                    <td className="px-4 py-2 text-sm">{log.email || '-'}</td>
-                    <td className="px-4 py-2 text-sm">{log.full_name}</td>
-                    <td className="px-4 py-2 text-sm">{log.igg_id}</td>
+                    {/* Profile + Name */}
+                    <td className="px-4 py-2 flex items-center gap-2">
+                      <img
+                        src={log.profile_image_url || '/fallback-avatar.png'}
+                        alt={log.full_name}
+                        className="w-10 h-10 rounded-xl border-2 border-blue-400 object-cover"
+                      />
+                      <div className="flex flex-col">
+                        <span className="font-semibold">{log.full_name || '-'}</span>
+                      </div>
+                    </td>
+
+                    <td className="px-4 py-2 text-sm">{maskEmail(log.email)}</td>
+                    <td className="px-4 py-2 text-sm">{log.igg_id || '-'}</td>
                     <td className="px-4 py-2 text-sm">{log.ip_address || '-'}</td>
                     <td className="px-4 py-2 text-sm truncate max-w-xs">{log.user_agent || '-'}</td>
                     <td className="px-4 py-2 text-sm">{log.success ? '✅ Success' : '❌ Failed'}</td>
