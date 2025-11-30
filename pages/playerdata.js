@@ -237,7 +237,8 @@ export default function PlayersDashboard() {
       rank_id: p?.rank_id ?? null,
       role: p?.role ?? 'member',
       deaths: p?.deaths ?? 0,
-      can_login: p?.can_login ?? false
+      can_login: p?.can_login ?? false,
+      email: p?.email ?? ''
     });
   };
   const closeEdit = () => { setEditingPlayer(null); setForm({}); };
@@ -264,7 +265,8 @@ export default function PlayersDashboard() {
         rank_id: form.rank_id ? Number(form.rank_id) : null,
         role: form.role || 'member',
         deaths: form.deaths ? Number(form.deaths) : 0,
-        can_login: !!form.can_login
+        can_login: !!form.can_login,
+        email: form.email || null
       };
       if (form.id) {
         const { error } = await supabase.from('players').update(payload).eq('id', form.id);
@@ -497,6 +499,7 @@ export default function PlayersDashboard() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <input name="full_name" placeholder="Full name" value={form.full_name || ''} onChange={handleChange} className="p-3 rounded bg-gray-800 border border-gray-700" />
                 <input name="igg_id" placeholder="IGG ID" value={form.igg_id || ''} onChange={handleChange} className="p-3 rounded bg-gray-800 border border-gray-700" />
+                <input name="email" placeholder="Email" value={form.email || ''} onChange={handleChange} className="p-3 rounded bg-gray-800 border border-gray-700" />
                 <input name="profile_image_url" placeholder="Profile image URL" value={form.profile_image_url || ''} onChange={handleChange} className="p-3 rounded bg-gray-800 border border-gray-700" />
                 <select name="troop_type" value={form.troop_type || ''} onChange={handleChange} className="p-3 rounded bg-gray-800 border border-gray-700">
                   <option value="">Troop type</option>
