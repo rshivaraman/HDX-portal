@@ -195,13 +195,13 @@ export default function Login() {
       <div className="bg-gray-900 w-full max-w-md rounded-2xl shadow-2xl p-8 flex flex-col items-center">
         <Image
           src="/logo.png"
-          alt="HDX Logo"
+          alt="Logo"
           width={80}
           height={80}
           className="mb-4 rounded-full border-2 border-blue-400 shadow-md"
         />
         <h1 className="text-3xl font-bold text-blue-400 mb-6 tracking-wide text-center">
-          HDX Alliance Login
+          Agni Alliance Login
         </h1>
 
         <form onSubmit={handleLogin} className="w-full flex flex-col gap-4">
