@@ -93,13 +93,13 @@ export default function Navbar() {
         >
           <Image
             src="/logo.png"
-            alt="HDX Logo"
+            alt="Logo"
             width={40}
             height={40}
             className="rounded-lg border border-blue-500 shadow-md object-cover"
           />
           <span className="font-bold tracking-wide text-blue-400 text-2xl">
-            HDX Alliance Portal
+            Agni Alliance Portal
           </span>
         </Link>
 
