@@ -92,7 +92,7 @@ export default function Navbar() {
           className="flex items-center gap-3 hover:opacity-90 transition-all duration-300"
         >
           <Image
-            src="/logo.png"
+            src="/logo.jpg"
             alt="Logo"
             width={40}
             height={40}
