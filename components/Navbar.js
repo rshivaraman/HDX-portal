@@ -226,6 +226,9 @@ export default function Navbar() {
                   <Link href="/coalition" onClick={handleMenuClick} className="block px-4 py-2 hover:bg-gray-700 rounded-b-md">
                     Coalition Management
                   </Link>
+                  <Link href="/diceevent" onClick={handleMenuClick} className="block px-4 py-2 hover:bg-gray-700 rounded-b-md">
+                    DS Dice Event Management
+                  </Link>
                 </div>
               </div>
 
@@ -313,6 +316,7 @@ export default function Navbar() {
                   <Link href="/eventplayers" onClick={handleMenuClick} className="block hover:text-blue-400">Event Players Selection</Link>
                   <Link href="/eventmgmt" onClick={handleMenuClick} className="block hover:text-blue-400">Event Management</Link>
                   <Link href="/coalition" onClick={handleMenuClick} className="block hover:text-blue-400">Coalition Management</Link>
+                <Link href="/diceevent" onClick={handleMenuClick} className="block hover:text-blue-400">DS Dice Event Management</Link>
                 </div>
               </details>
 
