@@ -6,11 +6,11 @@ export default function Footer() {
         {/* Left: Logo and Info */}
         <div className="flex items-center space-x-3">
           <div className="w-10 h-10 bg-gradient-to-r from-blue-500 to-purple-500 rounded-xl flex items-center justify-center text-white font-bold text-lg shadow-lg">
-            HDX
+            Agni
           </div>
           <div>
             <h2 className="text-lg font-semibold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-400">
-              HDX Alliance Portal
+              Agni Alliance Portal
             </h2>
             <p className="text-sm text-gray-400">
               Powered by Supabase ⚡ Built for Doomsday Survivors.
@@ -50,7 +50,7 @@ export default function Footer() {
 
       {/* Bottom: Copyright */}
       <div className="border-t border-gray-800 text-center py-3 text-xs text-gray-500">
-        © {new Date().getFullYear()} HDX Alliance. All rights reserved. Crafted with 💙 by the HDX Dev Team.
+        © {new Date().getFullYear()} Agni Alliance. All rights reserved. Crafted with 💙 by the Agni Dev Team.
       </div>
     </footer>
   );
