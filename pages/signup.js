@@ -133,13 +133,13 @@ export default function SignUp() {
       <div className="bg-gray-900 w-full max-w-lg rounded-2xl shadow-2xl p-8 flex flex-col items-center">
         <Image
           src="/logo.png"
-          alt="HDX Logo"
+          alt="Logo"
           width={80}
           height={80}
           className="mb-4 rounded-full border-2 border-blue-400 shadow-md"
         />
         <h1 className="text-3xl font-bold text-blue-400 mb-6 text-center">
-          HDX Alliance Sign Up
+          Agni Alliance Sign Up
         </h1>
 
         {message && (
