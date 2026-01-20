@@ -86,7 +86,7 @@ export default function HallOfFame() {
     <div className="bg-gradient-to-br from-gray-900 via-gray-800 to-black min-h-screen text-white px-4 pt-28 pb-10 sm:pt-24">
       <div className="max-w-7xl mx-auto">
         <h1 className="text-4xl font-extrabold text-center mb-8 text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 to-orange-500 drop-shadow-md">
-          👑 HDX Hall of Fame
+          👑 AGNI Hall of Fame
         </h1>
 
         {/* Tabs */}
