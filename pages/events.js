@@ -702,7 +702,7 @@ export default function EventPerformanceDashboard() {
                         </div>
                       </td>
                       <td className="px-3 py-2 border-b border-gray-700">{r.players?.igg_id || '-'}</td>
-                      <td className="px-3 py-2 border-b border-gray-700">{r.score}%</td>
+                      <td className="px-3 py-2 border-b border-gray-700">{r.score.toLocaleString()}</td>
                       <td className="px-3 py-2 border-b border-gray-700">{r.participation_count}</td>
                       <td className="px-3 py-2 border-b border-gray-700">#{r.rank}</td>
                       <td className="px-3 py-2 border-b border-gray-700">{r.comments || '-'}</td>
