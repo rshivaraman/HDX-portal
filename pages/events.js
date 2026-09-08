@@ -608,7 +608,7 @@ export default function EventPerformanceDashboard() {
                       <div className="text-xs text-gray-400">#{r.players?.igg_id || '-'}</div>
                     </div>
                     <div className="text-right">
-                      <div className="text-sm font-bold">{r.score}</div>
+                      <div className="text-sm font-bold">{r.score.toLocaleString()}</div>
                       <div className="text-xs text-gray-400">P:{r.participation_count}</div>
                     </div>
                   </div>
