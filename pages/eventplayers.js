@@ -501,8 +501,8 @@ useEffect(() => {
                     <td className="px-4 py-2">{ep.player?.igg_id || '—'}</td>
                     <td className="px-4 py-2">{Number(ep.player?.battle_rating || 0).toLocaleString()}</td>
                     <td className="px-4 py-2">{Number(ep.player?.might || 0).toLocaleString()}</td>
-                    <td className="px-4 py-2">{ep.player?.kills ?? 0}</td>
-                    <td className="px-4 py-2">{ep.player?.deaths ?? 0}</td>
+                    <td className="px-4 py-2">{ep.player?.kills.toLocaleString() ?? 0}</td>
+                    <td className="px-4 py-2">{ep.player?.deaths.toLocaleString() ?? 0}</td>
                     <td className="px-4 py-2">
                       {role === 'admin' ? (
                         <button
