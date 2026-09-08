@@ -383,9 +383,9 @@ export default function PlayersDashboard() {
                     </div>
 
                     <div className="mt-3 flex gap-4 text-sm">
-                      <div><div className="text-xs text-gray-400">BR</div><div className="font-semibold">{p.battle_rating ?? 0}</div></div>
-                      <div><div className="text-xs text-gray-400">Might</div><div className="font-semibold">{p.might ?? 0}</div></div>
-                      <div><div className="text-xs text-gray-400">Deaths</div><div className="font-semibold">{p.deaths ?? 0}</div></div>
+                      <div><div className="text-xs text-gray-400">BR</div><div className="font-semibold">{p.battle_rating.toLocaleString() ?? 0}</div></div>
+                      <div><div className="text-xs text-gray-400">Might</div><div className="font-semibold">{p.might.toLocaleString() ?? 0}</div></div>
+                      <div><div className="text-xs text-gray-400">Deaths</div><div className="font-semibold">{p.deaths.toLocaleString() ?? 0}</div></div>
                     </div>
 
                     <div className="mt-3 flex gap-2">
@@ -450,9 +450,9 @@ export default function PlayersDashboard() {
                       <td className="px-4 py-3"><TROOP_ICON type={p.troop_type} /> <span className="align-middle">{p.troop_type || '-'}</span></td>
                       <td className="px-4 py-3"><SPECIALIST_ICON spec={p.troop_specialist} /> <span className="align-middle">{p.troop_specialist || '-'}</span></td>
                       <td className="px-4 py-3"><div className="inline-block"><RankBadge rank={p.rank_id} /></div></td>
-                      <td className="px-4 py-3">{p.battle_rating ?? 0}</td>
-                      <td className="px-4 py-3">{p.might ?? 0}</td>
-                      <td className="px-4 py-3">{p.deaths ?? 0}</td>
+                      <td className="px-4 py-3">{p.battle_rating.toLocaleString() ?? 0}</td>
+                      <td className="px-4 py-3">{p.might.toLocaleString() ?? 0}</td>
+                      <td className="px-4 py-3">{p.deaths.toLocaleString() ?? 0}</td>
                       <td className="px-4 py-3 flex gap-2">
                         {role === 'admin' ? (
                           <>
