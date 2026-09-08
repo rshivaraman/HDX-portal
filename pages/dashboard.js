@@ -427,9 +427,9 @@ export default function UnifiedDashboard() {
                   {/* Rank with R prefix */}
                   <td className="px-4 py-3 font-medium">{player.rank_id ? `R${player.rank_id}` : '-'}</td>
 
-                  <td className="px-4 py-3">{player.battle_rating ?? '-'}</td>
-                  <td className="px-4 py-3">{player.might ?? 0}</td>
-                  <td className="px-4 py-3">{player.deaths ?? 0}</td>
+                  <td className="px-4 py-3">{player.battle_rating.toLocaleString() ?? '-'}</td>
+                  <td className="px-4 py-3">{player.might.toLocaleString() ?? 0}</td>
+                  <td className="px-4 py-3">{player.deaths.toLocaleString() ?? 0}</td>
 
                   <td className="px-4 py-3 flex justify-center gap-2">
                     {role === 'admin' ? (
