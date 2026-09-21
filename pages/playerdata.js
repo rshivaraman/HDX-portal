@@ -6,13 +6,16 @@ import { supabase } from '../lib/supabaseClient';
 /*
   Single-file Players Dashboard
   - Card + Table views
+  - Responsive portrait + landscape UI
   - Rank next to player name column (prefixed 'R')
-  - Troop & Specialist icon + text (inline SVG icons)
+  - Troop & Specialist icon + text
   - Role badge colors
   - Default sort: Rank DESC
   - Pagination
   - Edit / Add modal (admin only)
-  - No email displayed in the main dashboard
+  - No email displayed in main dashboard
+  - Landscape-safe header / controls
+  - Landscape-safe modal scrolling
 */
 
 // ---------------------------------------------------------
@@ -45,7 +48,7 @@ const TROOP_ICON = ({ type }) => {
           width={size}
           height={size}
           viewBox="0 0 24 24"
-          className="inline-block mr-1"
+          className="inline-block mr-1 shrink-0"
         >
           <path
             fill="currentColor"
@@ -60,7 +63,7 @@ const TROOP_ICON = ({ type }) => {
           width={size}
           height={size}
           viewBox="0 0 24 24"
-          className="inline-block mr-1"
+          className="inline-block mr-1 shrink-0"
         >
           <path
             fill="currentColor"
@@ -75,7 +78,7 @@ const TROOP_ICON = ({ type }) => {
           width={size}
           height={size}
           viewBox="0 0 24 24"
-          className="inline-block mr-1"
+          className="inline-block mr-1 shrink-0"
         >
           <path
             fill="currentColor"
@@ -91,7 +94,7 @@ const TROOP_ICON = ({ type }) => {
           width={size}
           height={size}
           viewBox="0 0 24 24"
-          className="inline-block mr-1"
+          className="inline-block mr-1 shrink-0"
         >
           <path
             fill="currentColor"
@@ -106,9 +109,14 @@ const TROOP_ICON = ({ type }) => {
           width={size}
           height={size}
           viewBox="0 0 24 24"
-          className="inline-block mr-1 opacity-60"
+          className="inline-block mr-1 opacity-60 shrink-0"
         >
-          <circle cx="12" cy="12" r="8" fill="currentColor" />
+          <circle
+            cx="12"
+            cy="12"
+            r="8"
+            fill="currentColor"
+          />
         </svg>
       );
   }
@@ -127,7 +135,7 @@ const SPECIALIST_ICON = ({ spec }) => {
           width={size}
           height={size}
           viewBox="0 0 24 24"
-          className="inline-block mr-1"
+          className="inline-block mr-1 shrink-0"
         >
           <path
             fill="currentColor"
@@ -142,7 +150,7 @@ const SPECIALIST_ICON = ({ spec }) => {
           width={size}
           height={size}
           viewBox="0 0 24 24"
-          className="inline-block mr-1"
+          className="inline-block mr-1 shrink-0"
         >
           <path
             fill="currentColor"
@@ -157,7 +165,7 @@ const SPECIALIST_ICON = ({ spec }) => {
           width={size}
           height={size}
           viewBox="0 0 24 24"
-          className="inline-block mr-1"
+          className="inline-block mr-1 shrink-0"
         >
           <path
             fill="currentColor"
@@ -172,7 +180,7 @@ const SPECIALIST_ICON = ({ spec }) => {
           width={size}
           height={size}
           viewBox="0 0 24 24"
-          className="inline-block mr-1"
+          className="inline-block mr-1 shrink-0"
         >
           <path
             fill="currentColor"
@@ -187,7 +195,7 @@ const SPECIALIST_ICON = ({ spec }) => {
           width={size}
           height={size}
           viewBox="0 0 24 24"
-          className="inline-block mr-1"
+          className="inline-block mr-1 shrink-0"
         >
           <path
             fill="currentColor"
@@ -202,7 +210,7 @@ const SPECIALIST_ICON = ({ spec }) => {
           width={size}
           height={size}
           viewBox="0 0 24 24"
-          className="inline-block mr-1 opacity-60"
+          className="inline-block mr-1 opacity-60 shrink-0"
         >
           <rect
             width="16"
@@ -231,7 +239,7 @@ const RoleBadge = ({ role }) => {
 
   return (
     <span
-      className={`px-2 py-0.5 rounded-full text-xs font-semibold ${classes}`}
+      className={`px-2 py-0.5 rounded-full text-xs font-semibold whitespace-nowrap ${classes}`}
     >
       {role}
     </span>
@@ -270,7 +278,7 @@ const RankBadge = ({ rank }) => {
 
   return (
     <span
-      className={`ml-2 inline-block px-2 py-0.5 text-xs font-semibold rounded-full ${color}`}
+      className={`ml-2 inline-block px-2 py-0.5 text-xs font-semibold rounded-full whitespace-nowrap ${color}`}
     >
       R{displayRank}
     </span>
@@ -399,14 +407,24 @@ export default function PlayersDashboard() {
   // FILTERING
   // ---------------------------------------------------------
   const filtered = useMemo(() => {
-    const searchText = String(search || '').trim().toLowerCase();
+    const searchText = String(search || '')
+      .trim()
+      .toLowerCase();
 
     return (players || []).filter((p) => {
-      const playerName = String(p.full_name ?? '').toLowerCase();
-      const playerIgg = String(p.igg_id ?? '').toLowerCase();
+      const playerName = String(
+        p.full_name ?? ''
+      ).toLowerCase();
 
-      const nameMatch = playerName.includes(searchText);
-      const iggMatch = playerIgg.includes(searchText);
+      const playerIgg = String(
+        p.igg_id ?? ''
+      ).toLowerCase();
+
+      const nameMatch =
+        playerName.includes(searchText);
+
+      const iggMatch =
+        playerIgg.includes(searchText);
 
       if (searchText && !(nameMatch || iggMatch)) {
         return false;
@@ -513,16 +531,21 @@ export default function PlayersDashboard() {
     Math.ceil(sorted.length / itemsPerPage)
   );
 
-  // Keep current page valid if filters reduce results.
   useEffect(() => {
     setPage((currentPage) =>
-      Math.min(Math.max(currentPage, 1), totalPages)
+      Math.min(
+        Math.max(currentPage, 1),
+        totalPages
+      )
     );
   }, [totalPages]);
 
   const paginated = useMemo(() => {
-    const start = (page - 1) * itemsPerPage;
-    const end = page * itemsPerPage;
+    const start =
+      (page - 1) * itemsPerPage;
+
+    const end =
+      page * itemsPerPage;
 
     return sorted.slice(start, end);
   }, [sorted, page, itemsPerPage]);
@@ -533,7 +556,9 @@ export default function PlayersDashboard() {
   const toggleSort = (field) => {
     if (sortField === field) {
       setSortOrder((prev) =>
-        prev === 'asc' ? 'desc' : 'asc'
+        prev === 'asc'
+          ? 'desc'
+          : 'asc'
       );
     } else {
       setSortField(field);
@@ -558,21 +583,30 @@ export default function PlayersDashboard() {
 
     setForm({
       id: player?.id ?? null,
-      full_name: player?.full_name ?? '',
-      igg_id: player?.igg_id ?? '',
+      full_name:
+        player?.full_name ?? '',
+      igg_id:
+        player?.igg_id ?? '',
       profile_image_url:
         player?.profile_image_url ?? '',
-      troop_type: player?.troop_type ?? '',
+      troop_type:
+        player?.troop_type ?? '',
       troop_specialist:
         player?.troop_specialist ?? '',
-      might: player?.might ?? 0,
+      might:
+        player?.might ?? 0,
       battle_rating:
         player?.battle_rating ?? 0,
-      rank_id: player?.rank_id ?? null,
-      role: player?.role ?? 'member',
-      deaths: player?.deaths ?? 0,
-      can_login: player?.can_login ?? false,
-      email: player?.email ?? ''
+      rank_id:
+        player?.rank_id ?? null,
+      role:
+        player?.role ?? 'member',
+      deaths:
+        player?.deaths ?? 0,
+      can_login:
+        player?.can_login ?? false,
+      email:
+        player?.email ?? ''
     });
   };
 
@@ -613,7 +647,9 @@ export default function PlayersDashboard() {
       return;
     }
 
-    if (!String(form.full_name || '').trim()) {
+    if (
+      !String(form.full_name || '').trim()
+    ) {
       alert('Full name required');
       return;
     }
@@ -623,21 +659,28 @@ export default function PlayersDashboard() {
     try {
       const payload = {
         full_name:
-          String(form.full_name || '').trim(),
+          String(
+            form.full_name || ''
+          ).trim(),
 
         igg_id:
           form.igg_id !== ''
-            ? String(form.igg_id).trim()
+            ? String(
+                form.igg_id
+              ).trim()
             : null,
 
         profile_image_url:
-          form.profile_image_url || null,
+          form.profile_image_url ||
+          null,
 
         troop_type:
-          form.troop_type || null,
+          form.troop_type ||
+          null,
 
         troop_specialist:
-          form.troop_specialist || null,
+          form.troop_specialist ||
+          null,
 
         might:
           form.might !== '' &&
@@ -675,7 +718,9 @@ export default function PlayersDashboard() {
 
         email:
           form.email
-            ? String(form.email).trim()
+            ? String(
+                form.email
+              ).trim()
             : null
       };
 
@@ -702,7 +747,6 @@ export default function PlayersDashboard() {
         }
       }
 
-      // Refresh players
       const {
         data,
         error: refreshError
@@ -721,7 +765,7 @@ export default function PlayersDashboard() {
 
       alert(
         'Save failed: ' +
-        (err?.message || String(err))
+          (err?.message || String(err))
       );
     } finally {
       setSaving(false);
@@ -754,14 +798,19 @@ export default function PlayersDashboard() {
       }
 
       setPlayers((prev) =>
-        prev.filter((p) => p.id !== id)
+        prev.filter(
+          (p) => p.id !== id
+        )
       );
     } catch (err) {
-      console.error('delete error', err);
+      console.error(
+        'delete error',
+        err
+      );
 
       alert(
         'Delete failed: ' +
-        (err?.message || String(err))
+          (err?.message || String(err))
       );
     }
   };
@@ -781,52 +830,70 @@ export default function PlayersDashboard() {
   // MAIN UI
   // ---------------------------------------------------------
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-black to-gray-800 text-white py-8 px-4">
-      <div className="max-w-7xl mx-auto backdrop-blur-md bg-black/40 p-6 rounded-2xl shadow-2xl border border-white/10 space-y-6">
+    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-black to-gray-800 text-white py-4 sm:py-8 px-3 sm:px-4">
 
-        {/* HEADER */}
-        <div className="flex items-center justify-between">
-          <h2 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-purple-500">
-            🎮 Players Dashboard
-          </h2>
+      <div className="max-w-7xl mx-auto backdrop-blur-md bg-black/40 p-3 sm:p-6 rounded-2xl shadow-2xl border border-white/10 space-y-4 sm:space-y-6">
 
-          <div className="flex items-center gap-3">
-            <div className="hidden sm:block text-sm text-gray-300">
+        {/* =====================================================
+            HEADER
+            Responsive fix:
+            - flex-wrap
+            - controls can move to next row
+            - Add button never gets clipped in landscape
+           ===================================================== */}
+        <div className="flex flex-wrap items-center gap-3">
+
+          {/* TITLE */}
+          <div className="flex-1 min-w-[180px]">
+            <h2 className="text-2xl sm:text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-purple-500">
+              🎮 Players Dashboard
+            </h2>
+          </div>
+
+          {/* HEADER CONTROLS */}
+          <div className="flex flex-wrap items-center justify-end gap-2 w-full sm:w-auto">
+
+            <div className="hidden sm:block text-sm text-gray-300 mr-1">
               View:
             </div>
 
             <button
+              type="button"
               onClick={() => {
                 setViewMode('cards');
                 setPage(1);
               }}
-              className={`px-3 py-2 rounded ${
+              className={`px-3 py-2 rounded-lg whitespace-nowrap ${
                 viewMode === 'cards'
                   ? 'bg-gray-800/80'
                   : 'bg-transparent'
-              } hover:bg-gray-800/60`}
+              } hover:bg-gray-800/60 border border-white/5`}
             >
               Cards
             </button>
 
             <button
+              type="button"
               onClick={() => {
                 setViewMode('table');
                 setPage(1);
               }}
-              className={`px-3 py-2 rounded ${
+              className={`px-3 py-2 rounded-lg whitespace-nowrap ${
                 viewMode === 'table'
                   ? 'bg-gray-800/80'
                   : 'bg-transparent'
-              } hover:bg-gray-800/60`}
+              } hover:bg-gray-800/60 border border-white/5`}
             >
               Table
             </button>
 
             {role === 'admin' && (
               <button
-                onClick={() => openEdit({})}
-                className="ml-3 px-4 py-2 rounded bg-gradient-to-r from-indigo-500 to-pink-500 text-black font-semibold"
+                type="button"
+                onClick={() =>
+                  openEdit({})
+                }
+                className="px-4 py-2 rounded-lg bg-gradient-to-r from-indigo-500 to-pink-500 text-black font-semibold whitespace-nowrap shadow-lg hover:opacity-90 active:scale-95 transition"
               >
                 ➕ Add
               </button>
@@ -834,33 +901,42 @@ export default function PlayersDashboard() {
           </div>
         </div>
 
-        {/* FILTERS */}
+        {/* =====================================================
+            FILTERS
+           ===================================================== */}
         <div className="flex flex-wrap gap-3 items-center">
 
           <input
             placeholder="Search name or IGG ID..."
             value={search}
             onChange={(e) => {
-              setSearch(e.target.value);
+              setSearch(
+                e.target.value
+              );
               setPage(1);
             }}
-            className="flex-1 min-w-[200px] p-3 rounded-lg bg-gray-800 border border-gray-700 text-white"
+            className="flex-1 min-w-[180px] p-3 rounded-lg bg-gray-800 border border-gray-700 text-white outline-none focus:border-blue-500"
           />
 
           <select
             value={troopFilter}
             onChange={(e) => {
-              setTroopFilter(e.target.value);
+              setTroopFilter(
+                e.target.value
+              );
               setPage(1);
             }}
-            className="p-3 rounded-lg bg-gray-800 border border-gray-700"
+            className="p-3 rounded-lg bg-gray-800 border border-gray-700 min-w-[150px]"
           >
             <option value="">
               All Troop Types
             </option>
 
             {TROOP_TYPES.map((t) => (
-              <option key={t} value={t}>
+              <option
+                key={t}
+                value={t}
+              >
                 {t}
               </option>
             ))}
@@ -869,17 +945,22 @@ export default function PlayersDashboard() {
           <select
             value={specFilter}
             onChange={(e) => {
-              setSpecFilter(e.target.value);
+              setSpecFilter(
+                e.target.value
+              );
               setPage(1);
             }}
-            className="p-3 rounded-lg bg-gray-800 border border-gray-700"
+            className="p-3 rounded-lg bg-gray-800 border border-gray-700 min-w-[150px]"
           >
             <option value="">
               All Specialists
             </option>
 
             {SPECIALISTS.map((s) => (
-              <option key={s} value={s}>
+              <option
+                key={s}
+                value={s}
+              >
                 {s}
               </option>
             ))}
@@ -888,10 +969,12 @@ export default function PlayersDashboard() {
           <select
             value={roleFilter}
             onChange={(e) => {
-              setRoleFilter(e.target.value);
+              setRoleFilter(
+                e.target.value
+              );
               setPage(1);
             }}
-            className="p-3 rounded-lg bg-gray-800 border border-gray-700"
+            className="p-3 rounded-lg bg-gray-800 border border-gray-700 min-w-[130px]"
           >
             <option value="">
               All Roles
@@ -906,19 +989,25 @@ export default function PlayersDashboard() {
             </option>
           </select>
 
-          <div className="ml-auto flex items-center gap-2">
+          {/* SORT */}
+          <div className="w-full xl:w-auto xl:ml-auto flex flex-wrap items-center gap-2">
+
             <div className="text-sm text-gray-400">
               Sort:
             </div>
 
             <button
+              type="button"
               onClick={() =>
-                toggleSort('full_name')
+                toggleSort(
+                  'full_name'
+                )
               }
-              className="px-2 py-1 rounded bg-gray-800/60"
+              className="px-2 py-1 rounded bg-gray-800/60 whitespace-nowrap"
             >
               Name{' '}
-              {sortField === 'full_name'
+              {sortField ===
+              'full_name'
                 ? sortOrder === 'asc'
                   ? '↑'
                   : '↓'
@@ -926,13 +1015,17 @@ export default function PlayersDashboard() {
             </button>
 
             <button
+              type="button"
               onClick={() =>
-                toggleSort('rank_id')
+                toggleSort(
+                  'rank_id'
+                )
               }
-              className="px-2 py-1 rounded bg-gray-800/60"
+              className="px-2 py-1 rounded bg-gray-800/60 whitespace-nowrap"
             >
               Rank{' '}
-              {sortField === 'rank_id'
+              {sortField ===
+              'rank_id'
                 ? sortOrder === 'asc'
                   ? '↑'
                   : '↓'
@@ -940,13 +1033,17 @@ export default function PlayersDashboard() {
             </button>
 
             <button
+              type="button"
               onClick={() =>
-                toggleSort('battle_rating')
+                toggleSort(
+                  'battle_rating'
+                )
               }
-              className="px-2 py-1 rounded bg-gray-800/60"
+              className="px-2 py-1 rounded bg-gray-800/60 whitespace-nowrap"
             >
               BR{' '}
-              {sortField === 'battle_rating'
+              {sortField ===
+              'battle_rating'
                 ? sortOrder === 'asc'
                   ? '↑'
                   : '↓'
@@ -954,13 +1051,17 @@ export default function PlayersDashboard() {
             </button>
 
             <button
+              type="button"
               onClick={() =>
-                toggleSort('might')
+                toggleSort(
+                  'might'
+                )
               }
-              className="px-2 py-1 rounded bg-gray-800/60"
+              className="px-2 py-1 rounded bg-gray-800/60 whitespace-nowrap"
             >
               Might{' '}
-              {sortField === 'might'
+              {sortField ===
+              'might'
                 ? sortOrder === 'asc'
                   ? '↑'
                   : '↓'
@@ -969,7 +1070,9 @@ export default function PlayersDashboard() {
           </div>
         </div>
 
-        {/* CARDS VIEW */}
+        {/* =====================================================
+            CARDS VIEW
+           ===================================================== */}
         {viewMode === 'cards' ? (
           <>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -977,12 +1080,14 @@ export default function PlayersDashboard() {
               {paginated.map((p) => (
                 <div
                   key={p.id}
-                  className="bg-gradient-to-br from-black/30 to-white/2 border border-gray-700 rounded-xl p-4 flex gap-4 items-start"
+                  className="bg-gradient-to-br from-black/30 to-white/2 border border-gray-700 rounded-xl p-4 flex gap-4 items-start min-w-0"
                 >
-                  <div className="w-16">
+                  <div className="w-16 shrink-0">
                     {p.profile_image_url ? (
                       <img
-                        src={p.profile_image_url}
+                        src={
+                          p.profile_image_url
+                        }
                         alt="profile"
                         className="w-16 h-16 rounded-full object-cover border-2 border-white/10"
                       />
@@ -993,19 +1098,21 @@ export default function PlayersDashboard() {
                     )}
                   </div>
 
-                  <div className="flex-1">
+                  <div className="flex-1 min-w-0">
 
-                    <div className="flex items-center gap-2">
-                      <div className="text-lg font-bold text-transparent bg-clip-text bg-gradient-to-r from-blue-300 to-purple-400">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <div className="text-lg font-bold text-transparent bg-clip-text bg-gradient-to-r from-blue-300 to-purple-400 truncate">
                         {p.full_name || '-'}
                       </div>
 
                       <RankBadge
-                        rank={p.rank_id}
+                        rank={
+                          p.rank_id
+                        }
                       />
                     </div>
 
-                    <div className="text-xs text-gray-400 mt-1">
+                    <div className="text-xs text-gray-400 mt-1 truncate">
                       IGG:{' '}
                       <span className="font-semibold text-gray-200">
                         {p.igg_id || '-'}
@@ -1014,34 +1121,42 @@ export default function PlayersDashboard() {
 
                     <div className="mt-3 flex flex-wrap gap-2 items-center">
 
-                      <div className="flex items-center text-sm bg-gray-800/60 px-2 py-1 rounded">
-                        <RoleBadge role={p.role} />
+                      <div className="flex items-center text-sm bg-gray-800/60 px-2 py-1 rounded whitespace-nowrap">
+                        <RoleBadge
+                          role={p.role}
+                        />
                       </div>
 
-                      <div className="flex items-center text-sm bg-gray-800/60 px-2 py-1 rounded">
+                      <div className="flex items-center text-sm bg-gray-800/60 px-2 py-1 rounded whitespace-nowrap">
                         <TROOP_ICON
-                          type={p.troop_type}
+                          type={
+                            p.troop_type
+                          }
                         />
 
                         <span className="ml-1 text-sm">
-                          {p.troop_type || '-'}
+                          {p.troop_type ||
+                            '-'}
                         </span>
                       </div>
 
-                      <div className="flex items-center text-sm bg-gray-800/60 px-2 py-1 rounded">
+                      <div className="flex items-center text-sm bg-gray-800/60 px-2 py-1 rounded whitespace-nowrap">
                         <SPECIALIST_ICON
-                          spec={p.troop_specialist}
+                          spec={
+                            p.troop_specialist
+                          }
                         />
 
                         <span className="ml-1 text-sm">
-                          {p.troop_specialist || '-'}
+                          {p.troop_specialist ||
+                            '-'}
                         </span>
                       </div>
 
                     </div>
 
                     {/* NUMBERS */}
-                    <div className="mt-3 flex gap-4 text-sm">
+                    <div className="mt-3 flex flex-wrap gap-x-4 gap-y-2 text-sm">
 
                       <div>
                         <div className="text-xs text-gray-400">
@@ -1085,10 +1200,12 @@ export default function PlayersDashboard() {
                     </div>
 
                     {/* ACTIONS */}
-                    <div className="mt-3 flex gap-2">
+                    <div className="mt-3 flex flex-wrap gap-2">
+
                       {role === 'admin' ? (
                         <>
                           <button
+                            type="button"
                             onClick={() =>
                               openEdit(p)
                             }
@@ -1098,8 +1215,11 @@ export default function PlayersDashboard() {
                           </button>
 
                           <button
+                            type="button"
                             onClick={() =>
-                              handleDelete(p.id)
+                              handleDelete(
+                                p.id
+                              )
                             }
                             className="px-3 py-1 rounded bg-red-600 text-white"
                           >
@@ -1111,38 +1231,52 @@ export default function PlayersDashboard() {
                           View only
                         </div>
                       )}
-                    </div>
 
+                    </div>
                   </div>
                 </div>
               ))}
 
+              {paginated.length === 0 && (
+                <div className="col-span-full text-center py-10 text-gray-400 italic">
+                  No records found.
+                </div>
+              )}
+
             </div>
 
             {/* CARDS PAGINATION */}
-            <div className="flex items-center justify-between mt-4">
+            <div className="flex flex-wrap items-center justify-between gap-3 mt-4">
 
               <div className="text-sm text-gray-400">
                 Showing{' '}
                 {sorted.length === 0
                   ? 0
-                  : ((page - 1) *
+                  : ((
+                      page - 1
+                    ) *
                       perPageCards) +
                     1}{' '}
                 -{' '}
                 {Math.min(
-                  page * perPageCards,
+                  page *
+                    perPageCards,
                   sorted.length
                 )}{' '}
-                of {sorted.length}
+                of{' '}
+                {sorted.length}
               </div>
 
               <div className="flex items-center gap-2">
 
                 <button
+                  type="button"
                   onClick={() =>
                     setPage((p) =>
-                      Math.max(1, p - 1)
+                      Math.max(
+                        1,
+                        p - 1
+                      )
                     )
                   }
                   disabled={page === 1}
@@ -1151,11 +1285,13 @@ export default function PlayersDashboard() {
                   Prev
                 </button>
 
-                <div className="px-3 py-1 bg-gray-800 rounded">
-                  Page {page} / {totalPages}
+                <div className="px-3 py-1 bg-gray-800 rounded whitespace-nowrap">
+                  Page {page} /{' '}
+                  {totalPages}
                 </div>
 
                 <button
+                  type="button"
                   onClick={() =>
                     setPage((p) =>
                       Math.min(
@@ -1165,7 +1301,8 @@ export default function PlayersDashboard() {
                     )
                   }
                   disabled={
-                    page === totalPages
+                    page ===
+                    totalPages
                   }
                   className="px-3 py-1 rounded bg-gray-700 disabled:opacity-50"
                 >
@@ -1177,7 +1314,9 @@ export default function PlayersDashboard() {
           </>
         ) : (
 
-          /* TABLE VIEW */
+          /* =====================================================
+             TABLE VIEW
+             ===================================================== */
           <>
             <div className="overflow-x-auto rounded-xl border border-gray-700 mt-3">
 
@@ -1187,37 +1326,41 @@ export default function PlayersDashboard() {
                   <tr>
 
                     <th
-                      className="px-4 py-2 cursor-pointer"
+                      className="px-4 py-2 cursor-pointer whitespace-nowrap"
                       onClick={() =>
-                        toggleSort('full_name')
+                        toggleSort(
+                          'full_name'
+                        )
                       }
                     >
                       Player
                     </th>
 
-                    <th className="px-4 py-2">
+                    <th className="px-4 py-2 whitespace-nowrap">
                       Profile
                     </th>
 
-                    <th className="px-4 py-2">
+                    <th className="px-4 py-2 whitespace-nowrap">
                       IGG
                     </th>
 
-                    <th className="px-4 py-2">
+                    <th className="px-4 py-2 whitespace-nowrap">
                       Role
                     </th>
 
                     <th
-                      className="px-4 py-2 cursor-pointer"
+                      className="px-4 py-2 cursor-pointer whitespace-nowrap"
                       onClick={() =>
-                        toggleSort('troop_type')
+                        toggleSort(
+                          'troop_type'
+                        )
                       }
                     >
                       Troop
                     </th>
 
                     <th
-                      className="px-4 py-2 cursor-pointer"
+                      className="px-4 py-2 cursor-pointer whitespace-nowrap"
                       onClick={() =>
                         toggleSort(
                           'troop_specialist'
@@ -1228,16 +1371,18 @@ export default function PlayersDashboard() {
                     </th>
 
                     <th
-                      className="px-4 py-2 cursor-pointer"
+                      className="px-4 py-2 cursor-pointer whitespace-nowrap"
                       onClick={() =>
-                        toggleSort('rank_id')
+                        toggleSort(
+                          'rank_id'
+                        )
                       }
                     >
                       Rank
                     </th>
 
                     <th
-                      className="px-4 py-2 cursor-pointer"
+                      className="px-4 py-2 cursor-pointer whitespace-nowrap"
                       onClick={() =>
                         toggleSort(
                           'battle_rating'
@@ -1248,24 +1393,28 @@ export default function PlayersDashboard() {
                     </th>
 
                     <th
-                      className="px-4 py-2 cursor-pointer"
+                      className="px-4 py-2 cursor-pointer whitespace-nowrap"
                       onClick={() =>
-                        toggleSort('might')
+                        toggleSort(
+                          'might'
+                        )
                       }
                     >
                       Might
                     </th>
 
                     <th
-                      className="px-4 py-2 cursor-pointer"
+                      className="px-4 py-2 cursor-pointer whitespace-nowrap"
                       onClick={() =>
-                        toggleSort('deaths')
+                        toggleSort(
+                          'deaths'
+                        )
                       }
                     >
                       Deaths
                     </th>
 
-                    <th className="px-4 py-2">
+                    <th className="px-4 py-2 whitespace-nowrap">
                       Actions
                     </th>
 
@@ -1280,14 +1429,17 @@ export default function PlayersDashboard() {
                       className="border-t border-gray-700 hover:bg-gray-800/30"
                     >
 
-                      <td className="px-4 py-3">
+                      <td className="px-4 py-3 whitespace-nowrap">
                         <div className="flex items-center gap-2">
                           <div className="font-semibold text-gray-100">
-                            {p.full_name || '-'}
+                            {p.full_name ||
+                              '-'}
                           </div>
 
                           <RankBadge
-                            rank={p.rank_id}
+                            rank={
+                              p.rank_id
+                            }
                           />
                         </div>
                       </td>
@@ -1308,7 +1460,7 @@ export default function PlayersDashboard() {
                         )}
                       </td>
 
-                      <td className="px-4 py-3">
+                      <td className="px-4 py-3 whitespace-nowrap">
                         {p.igg_id || '-'}
                       </td>
 
@@ -1318,17 +1470,20 @@ export default function PlayersDashboard() {
                         />
                       </td>
 
-                      <td className="px-4 py-3">
+                      <td className="px-4 py-3 whitespace-nowrap">
                         <TROOP_ICON
-                          type={p.troop_type}
+                          type={
+                            p.troop_type
+                          }
                         />
 
                         <span className="align-middle">
-                          {p.troop_type || '-'}
+                          {p.troop_type ||
+                            '-'}
                         </span>
                       </td>
 
-                      <td className="px-4 py-3">
+                      <td className="px-4 py-3 whitespace-nowrap">
                         <SPECIALIST_ICON
                           spec={
                             p.troop_specialist
@@ -1344,38 +1499,40 @@ export default function PlayersDashboard() {
                       <td className="px-4 py-3">
                         <div className="inline-block">
                           <RankBadge
-                            rank={p.rank_id}
+                            rank={
+                              p.rank_id
+                            }
                           />
                         </div>
                       </td>
 
-                      {/* SAFE NUMBER FORMATTING */}
-                      <td className="px-4 py-3">
+                      <td className="px-4 py-3 whitespace-nowrap">
                         {formatNumber(
                           p.battle_rating,
                           0
                         )}
                       </td>
 
-                      <td className="px-4 py-3">
+                      <td className="px-4 py-3 whitespace-nowrap">
                         {formatNumber(
                           p.might,
                           0
                         )}
                       </td>
 
-                      <td className="px-4 py-3">
+                      <td className="px-4 py-3 whitespace-nowrap">
                         {formatNumber(
                           p.deaths,
                           0
                         )}
                       </td>
 
-                      <td className="px-4 py-3 flex gap-2">
+                      <td className="px-4 py-3 whitespace-nowrap">
 
                         {role === 'admin' ? (
-                          <>
+                          <div className="flex gap-2">
                             <button
+                              type="button"
                               onClick={() =>
                                 openEdit(p)
                               }
@@ -1385,6 +1542,7 @@ export default function PlayersDashboard() {
                             </button>
 
                             <button
+                              type="button"
                               onClick={() =>
                                 handleDelete(
                                   p.id
@@ -1394,7 +1552,7 @@ export default function PlayersDashboard() {
                             >
                               Delete
                             </button>
-                          </>
+                          </div>
                         ) : (
                           <span className="text-gray-400 italic">
                             View
@@ -1423,29 +1581,37 @@ export default function PlayersDashboard() {
             </div>
 
             {/* TABLE PAGINATION */}
-            <div className="flex items-center justify-between mt-4">
+            <div className="flex flex-wrap items-center justify-between gap-3 mt-4">
 
               <div className="text-sm text-gray-400">
                 Showing{' '}
                 {sorted.length === 0
                   ? 0
-                  : ((page - 1) *
+                  : ((
+                      page - 1
+                    ) *
                       perPageTable) +
                     1}{' '}
                 -{' '}
                 {Math.min(
-                  page * perPageTable,
+                  page *
+                    perPageTable,
                   sorted.length
                 )}{' '}
-                of {sorted.length}
+                of{' '}
+                {sorted.length}
               </div>
 
               <div className="flex items-center gap-2">
 
                 <button
+                  type="button"
                   onClick={() =>
                     setPage((p) =>
-                      Math.max(1, p - 1)
+                      Math.max(
+                        1,
+                        p - 1
+                      )
                     )
                   }
                   disabled={page === 1}
@@ -1454,11 +1620,13 @@ export default function PlayersDashboard() {
                   Prev
                 </button>
 
-                <div className="px-3 py-1 bg-gray-800 rounded">
-                  Page {page} / {totalPages}
+                <div className="px-3 py-1 bg-gray-800 rounded whitespace-nowrap">
+                  Page {page} /{' '}
+                  {totalPages}
                 </div>
 
                 <button
+                  type="button"
                   onClick={() =>
                     setPage((p) =>
                       Math.min(
@@ -1468,7 +1636,8 @@ export default function PlayersDashboard() {
                     )
                   }
                   disabled={
-                    page === totalPages
+                    page ===
+                    totalPages
                   }
                   className="px-3 py-1 rounded bg-gray-700 disabled:opacity-50"
                 >
@@ -1480,215 +1649,267 @@ export default function PlayersDashboard() {
           </>
         )}
 
-        {/* EDIT / ADD MODAL */}
+        {/* =====================================================
+            EDIT / ADD MODAL
+           ===================================================== */}
         {editingPlayer !== null && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="fixed inset-0 z-50 overflow-y-auto">
 
-            <div
-              onClick={closeEdit}
-              className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-            ></div>
+            <div className="min-h-full flex items-center justify-center p-3 sm:p-4">
 
-            <div className="relative bg-gray-900 w-full max-w-2xl rounded-2xl p-6 border border-gray-700 shadow-2xl z-10">
+              {/* BACKDROP */}
+              <div
+                onClick={closeEdit}
+                className="fixed inset-0 bg-black/60 backdrop-blur-sm"
+              />
 
-              <div className="flex items-center justify-between mb-4">
+              {/* MODAL */}
+              <div className="relative bg-gray-900 w-full max-w-2xl max-h-[92vh] overflow-y-auto rounded-2xl p-4 sm:p-6 border border-gray-700 shadow-2xl z-10">
 
-                <h3 className="text-xl font-semibold text-blue-400">
-                  {form.id
-                    ? '✏️ Edit Player'
-                    : '➕ Add Player'}
-                </h3>
+                <div className="flex items-center justify-between gap-3 mb-4">
 
-                <button
-                  onClick={closeEdit}
-                  className="text-gray-400 hover:text-white"
-                >
-                  ✕
-                </button>
+                  <h3 className="text-xl font-semibold text-blue-400">
+                    {form.id
+                      ? '✏️ Edit Player'
+                      : '➕ Add Player'}
+                  </h3>
 
-              </div>
+                  <button
+                    type="button"
+                    onClick={closeEdit}
+                    className="text-gray-400 hover:text-white text-xl shrink-0"
+                    aria-label="Close"
+                  >
+                    ✕
+                  </button>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                </div>
 
-                <input
-                  name="full_name"
-                  placeholder="Full name"
-                  value={
-                    form.full_name || ''
-                  }
-                  onChange={handleChange}
-                  className="p-3 rounded bg-gray-800 border border-gray-700"
-                />
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
 
-                <input
-                  name="igg_id"
-                  placeholder="IGG ID"
-                  value={
-                    form.igg_id || ''
-                  }
-                  onChange={handleChange}
-                  className="p-3 rounded bg-gray-800 border border-gray-700"
-                />
-
-                <input
-                  name="email"
-                  placeholder="Email"
-                  value={
-                    form.email || ''
-                  }
-                  onChange={handleChange}
-                  className="p-3 rounded bg-gray-800 border border-gray-700"
-                />
-
-                <input
-                  name="profile_image_url"
-                  placeholder="Profile image URL"
-                  value={
-                    form.profile_image_url ||
-                    ''
-                  }
-                  onChange={handleChange}
-                  className="p-3 rounded bg-gray-800 border border-gray-700"
-                />
-
-                <select
-                  name="troop_type"
-                  value={
-                    form.troop_type || ''
-                  }
-                  onChange={handleChange}
-                  className="p-3 rounded bg-gray-800 border border-gray-700"
-                >
-                  <option value="">
-                    Troop type
-                  </option>
-
-                  {TROOP_TYPES.map((t) => (
-                    <option
-                      key={t}
-                      value={t}
-                    >
-                      {t}
-                    </option>
-                  ))}
-                </select>
-
-                <select
-                  name="troop_specialist"
-                  value={
-                    form.troop_specialist ||
-                    ''
-                  }
-                  onChange={handleChange}
-                  className="p-3 rounded bg-gray-800 border border-gray-700"
-                >
-                  <option value="">
-                    Specialist
-                  </option>
-
-                  {SPECIALISTS.map((s) => (
-                    <option
-                      key={s}
-                      value={s}
-                    >
-                      {s}
-                    </option>
-                  ))}
-                </select>
-
-                <input
-                  name="role"
-                  value={
-                    form.role || 'member'
-                  }
-                  onChange={handleChange}
-                  className="p-3 rounded bg-gray-800 border border-gray-700"
-                />
-
-                <input
-                  type="number"
-                  name="might"
-                  placeholder="Might"
-                  value={
-                    form.might ?? 0
-                  }
-                  onChange={handleChange}
-                  className="p-3 rounded bg-gray-800 border border-gray-700"
-                />
-
-                <input
-                  type="number"
-                  name="battle_rating"
-                  placeholder="Battle Rating"
-                  value={
-                    form.battle_rating ?? 0
-                  }
-                  onChange={handleChange}
-                  className="p-3 rounded bg-gray-800 border border-gray-700"
-                />
-
-                <input
-                  type="number"
-                  name="rank_id"
-                  placeholder="Rank number"
-                  value={
-                    form.rank_id ?? ''
-                  }
-                  onChange={handleChange}
-                  className="p-3 rounded bg-gray-800 border border-gray-700"
-                />
-
-                <input
-                  type="number"
-                  name="deaths"
-                  placeholder="Deaths"
-                  value={
-                    form.deaths ?? 0
-                  }
-                  onChange={handleChange}
-                  className="p-3 rounded bg-gray-800 border border-gray-700"
-                />
-
-                <label className="flex items-center gap-2 mt-2">
                   <input
-                    type="checkbox"
-                    name="can_login"
-                    checked={
-                      !!form.can_login
+                    name="full_name"
+                    placeholder="Full name"
+                    value={
+                      form.full_name ||
+                      ''
                     }
-                    onChange={handleChange}
+                    onChange={
+                      handleChange
+                    }
+                    className="p-3 rounded bg-gray-800 border border-gray-700 text-white outline-none focus:border-blue-500"
                   />
 
-                  <span className="text-sm text-gray-300">
-                    Can login
-                  </span>
-                </label>
+                  <input
+                    name="igg_id"
+                    placeholder="IGG ID"
+                    value={
+                      form.igg_id ||
+                      ''
+                    }
+                    onChange={
+                      handleChange
+                    }
+                    className="p-3 rounded bg-gray-800 border border-gray-700 text-white outline-none focus:border-blue-500"
+                  />
+
+                  <input
+                    name="email"
+                    placeholder="Email"
+                    value={
+                      form.email ||
+                      ''
+                    }
+                    onChange={
+                      handleChange
+                    }
+                    className="p-3 rounded bg-gray-800 border border-gray-700 text-white outline-none focus:border-blue-500"
+                  />
+
+                  <input
+                    name="profile_image_url"
+                    placeholder="Profile image URL"
+                    value={
+                      form.profile_image_url ||
+                      ''
+                    }
+                    onChange={
+                      handleChange
+                    }
+                    className="p-3 rounded bg-gray-800 border border-gray-700 text-white outline-none focus:border-blue-500"
+                  />
+
+                  <select
+                    name="troop_type"
+                    value={
+                      form.troop_type ||
+                      ''
+                    }
+                    onChange={
+                      handleChange
+                    }
+                    className="p-3 rounded bg-gray-800 border border-gray-700 text-white"
+                  >
+                    <option value="">
+                      Troop type
+                    </option>
+
+                    {TROOP_TYPES.map(
+                      (t) => (
+                        <option
+                          key={t}
+                          value={t}
+                        >
+                          {t}
+                        </option>
+                      )
+                    )}
+                  </select>
+
+                  <select
+                    name="troop_specialist"
+                    value={
+                      form.troop_specialist ||
+                      ''
+                    }
+                    onChange={
+                      handleChange
+                    }
+                    className="p-3 rounded bg-gray-800 border border-gray-700 text-white"
+                  >
+                    <option value="">
+                      Specialist
+                    </option>
+
+                    {SPECIALISTS.map(
+                      (s) => (
+                        <option
+                          key={s}
+                          value={s}
+                        >
+                          {s}
+                        </option>
+                      )
+                    )}
+                  </select>
+
+                  <input
+                    name="role"
+                    value={
+                      form.role ||
+                      'member'
+                    }
+                    onChange={
+                      handleChange
+                    }
+                    className="p-3 rounded bg-gray-800 border border-gray-700 text-white outline-none focus:border-blue-500"
+                  />
+
+                  <input
+                    type="number"
+                    name="might"
+                    placeholder="Might"
+                    value={
+                      form.might ??
+                      0
+                    }
+                    onChange={
+                      handleChange
+                    }
+                    className="p-3 rounded bg-gray-800 border border-gray-700 text-white outline-none focus:border-blue-500"
+                  />
+
+                  <input
+                    type="number"
+                    name="battle_rating"
+                    placeholder="Battle Rating"
+                    value={
+                      form.battle_rating ??
+                      0
+                    }
+                    onChange={
+                      handleChange
+                    }
+                    className="p-3 rounded bg-gray-800 border border-gray-700 text-white outline-none focus:border-blue-500"
+                  />
+
+                  <input
+                    type="number"
+                    name="rank_id"
+                    placeholder="Rank number"
+                    value={
+                      form.rank_id ??
+                      ''
+                    }
+                    onChange={
+                      handleChange
+                    }
+                    className="p-3 rounded bg-gray-800 border border-gray-700 text-white outline-none focus:border-blue-500"
+                  />
+
+                  <input
+                    type="number"
+                    name="deaths"
+                    placeholder="Deaths"
+                    value={
+                      form.deaths ??
+                      0
+                    }
+                    onChange={
+                      handleChange
+                    }
+                    className="p-3 rounded bg-gray-800 border border-gray-700 text-white outline-none focus:border-blue-500"
+                  />
+
+                  <label className="flex items-center gap-2 mt-2">
+                    <input
+                      type="checkbox"
+                      name="can_login"
+                      checked={
+                        !!form.can_login
+                      }
+                      onChange={
+                        handleChange
+                      }
+                    />
+
+                    <span className="text-sm text-gray-300">
+                      Can login
+                    </span>
+                  </label>
+
+                </div>
+
+                <div className="flex flex-wrap justify-end gap-3 mt-6">
+
+                  <button
+                    type="button"
+                    onClick={
+                      closeEdit
+                    }
+                    className="px-4 py-2 rounded bg-gray-600 hover:bg-gray-700"
+                  >
+                    Cancel
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={
+                      handleSave
+                    }
+                    disabled={saving}
+                    className="px-4 py-2 rounded bg-gradient-to-r from-indigo-500 to-pink-500 text-black font-semibold disabled:opacity-50"
+                  >
+                    {saving
+                      ? 'Saving...'
+                      : form.id
+                      ? 'Update'
+                      : 'Add'}
+                  </button>
+
+                </div>
 
               </div>
-
-              <div className="flex justify-end gap-3 mt-6">
-
-                <button
-                  onClick={closeEdit}
-                  className="px-4 py-2 rounded bg-gray-600 hover:bg-gray-700"
-                >
-                  Cancel
-                </button>
-
-                <button
-                  onClick={handleSave}
-                  disabled={saving}
-                  className="px-4 py-2 rounded bg-gradient-to-r from-indigo-500 to-pink-500 text-black font-semibold disabled:opacity-50"
-                >
-                  {saving
-                    ? 'Saving...'
-                    : form.id
-                    ? 'Update'
-                    : 'Add'}
-                </button>
-
-              </div>
-
             </div>
           </div>
         )}
